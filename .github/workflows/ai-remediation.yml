@@ -5,7 +5,7 @@ on:
 
 jobs:
   ai-fix-generation:
-    runs-on: ubuntu-latest'
+    runs-on: ubuntu-latest
 
     steps:
 
@@ -31,7 +31,7 @@ jobs:
 
     - name: Generate AI fixes
       env:
-        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}  # You'll add this secret
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       run: |
         python scripts/ai_remediation.py \
           --input ./security-results/merged-results.json \
@@ -53,11 +53,11 @@ jobs:
 
         git commit -m "AI Security Fixes
 
-        Applied automated fixes for security vulnerabilities:
-        $(cat fixes-summary.txt)
+Applied automated fixes for security vulnerabilities:
+$(cat fixes-summary.txt)
 
-        Please review these changes carefully before merging.
-        " || exit 0
+Please review these changes carefully before merging.
+" || exit 0
 
         git push origin $BRANCH_NAME
 
@@ -79,7 +79,6 @@ jobs:
           - Test thoroughly before merging
           - Some fixes might need manual adjustment
           - Check that functionality still works as expected
-          
           
           - SAST Issues: $(jq '.sast | length' ./security-results/merged-results.json)
           - Dependency Issues: $(jq '.dependencies | length' ./security-results/merged-results.json)
