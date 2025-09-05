@@ -8,19 +8,14 @@ on:
   schedule:
     - cron: '0 2 * * 1'
 
-permissions:
-  contents: read
-  actions: write
-  security-events: write
-
 jobs: 
   security-scan:
     runs-on: ubuntu-latest
 
     permissions:
-      security-events: write
-      actions: read
       contents: read
+      actions: write
+      security-events: write
 
     steps:
     - name: Checkout code
@@ -41,7 +36,7 @@ jobs:
       uses: github/codeql-action/init@v3
       with:
         languages: python
-        
+
     - name: Autobuild
       uses: github/codeql-action/autobuild@v3
 
@@ -50,15 +45,14 @@ jobs:
       with:
         output: sarif-results
         upload: false
-        
+
     - name: Run Safety check
       run: |
         safety check --json --output safety-results.json || true
 
-    - name: Start local server for DAST
+    - name: Start application for DAST
       run: |
-        cd src
-        python -m http.server 5000 &
+        python src/app.py &
         sleep 10
 
     - name: Run OWASP ZAP Scan
@@ -73,6 +67,15 @@ jobs:
       run: |
         python scripts/parse_sarif.py
 
+    - name: Verify merged results
+      run: |
+        if [ -f merged-results.json ]; then
+          echo " merged-results.json exists"
+          ls -l merged-results.json
+        else
+          echo " merged-results.json not found"
+        fi
+
     - name: Upload security results
       uses: actions/upload-artifact@v4
       with:
@@ -80,24 +83,5 @@ jobs:
         path: |
           merged-results.json
           sarif-results/
-
-    - name: Check for vulnerabilities
-      id: check-vulns
-      run: |
-        if [ -s merged-results.json ]; then
-          echo "vulns_found=true" >> $GITHUB_OUTPUT
-        else
-          echo "vulns_found=false" >> $GITHUB_OUTPUT
-        fi
-
-    - name: Trigger AI Remediation
-      if: steps.check-vulns.outputs.vulns_found == 'true'
-      uses: actions/github-script@v6
-      with:
-        script: |
-          github.rest.actions.createWorkflowDispatch({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            workflow_id: 'ai-remediation.yml',
-            ref: context.ref
-          })
+          safety-results.json
+          zap_report.json
