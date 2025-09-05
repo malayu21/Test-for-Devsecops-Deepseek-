@@ -56,6 +56,9 @@ def parse_safety_results(safety_file):
 def parse_zap_results():
     vulnerabilities = []
     zap_files = glob.glob("**/zap_report.json", recursive=True)
+    if not zap_files:
+        logger.warning("No ZAP report files found")
+        return vulnerabilities
     for zap_file in zap_files:
         try:
             with open(zap_file, 'r') as f:
