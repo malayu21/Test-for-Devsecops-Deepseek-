@@ -4,9 +4,10 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   actions: write
   security-events: write
+  pull-requests: write
 
 jobs:
   ai-fix-generation:
@@ -69,7 +70,7 @@ Please review these changes carefully before merging.
         echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
         
     - name: Create Pull Request
-      uses: peter-evans/create-pull-request@v5
+      uses: peter-evans/create-pull-request@v6
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
         branch: ${{ env.BRANCH_NAME }}
