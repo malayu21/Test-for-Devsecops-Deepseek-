@@ -3,6 +3,11 @@ name: AI Security Remediation
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+  actions: write
+  security-events: write
+
 jobs:
   ai-fix-generation:
     runs-on: ubuntu-latest
