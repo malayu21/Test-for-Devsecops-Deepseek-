@@ -18,21 +18,33 @@ jobs:
       security-events: write
 
     steps:
+    # -------------------------
+    # Checkout source code
+    # -------------------------
     - name: Checkout code
       uses: actions/checkout@v4
 
+    # -------------------------
+    # Set up Python
+    # -------------------------
     - name: Setup Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.9'
 
+    # -------------------------
+    # Install dependencies
+    # -------------------------
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         pip install safety
 
-    - name: Run CodeQL Analysis
+    # -------------------------
+    # Run CodeQL Analysis
+    # -------------------------
+    - name: Init CodeQL
       uses: github/codeql-action/init@v3
       with:
         languages: python
@@ -46,36 +58,54 @@ jobs:
         output: sarif-results
         upload: false
 
+    # -------------------------
+    # Run Safety check
+    # -------------------------
     - name: Run Safety check
       run: |
         safety check --json --output safety-results.json || true
 
-    - name: Start application for DAST
+    # -------------------------
+    # Start application for DAST
+    # -------------------------
+    - name: Start application
       run: |
-        python src/app.py &
-        sleep 10
+        python src/app.py --host 0.0.0.0 &
+        sleep 15  # wait for app to fully start
 
+    # -------------------------
+    # Run OWASP ZAP scan
+    # -------------------------
     - name: Run OWASP ZAP Scan
       uses: zaproxy/action-full-scan@v0.7.0
       with:
-        target: 'http://localhost:5000'
+        target: 'http://host.docker.internal:5000'
         rules_file_name: '.zap/rules.tsv'
         cmd_options: '-a -j -m 2 -T 5'
         artifact_name: 'zap_report'
 
+    # -------------------------
+    # Merge security results
+    # -------------------------
     - name: Merge security results
       run: |
         python scripts/parse_sarif.py
 
+    # -------------------------
+    # Verify merged results
+    # -------------------------
     - name: Verify merged results
       run: |
         if [ -f merged-results.json ]; then
-          echo " merged-results.json exists"
+          echo "merged-results.json exists"
           ls -l merged-results.json
         else
-          echo " merged-results.json not found"
+          echo "merged-results.json not found"
         fi
 
+    # -------------------------
+    # Upload all artifacts
+    # -------------------------
     - name: Upload security results
       uses: actions/upload-artifact@v4
       with:
@@ -84,4 +114,6 @@ jobs:
           merged-results.json
           sarif-results/
           safety-results.json
-          zap_report.json
+          report_json.json
+          report_md.md
+          report_html.html
