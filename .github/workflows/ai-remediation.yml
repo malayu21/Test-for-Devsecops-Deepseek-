@@ -18,7 +18,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
+        pip install -r Test-for-Devsecops/requirements.txt
 
     - name: Checkout code
       uses: actions/checkout@v4
