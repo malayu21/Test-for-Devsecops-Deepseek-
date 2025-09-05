@@ -22,7 +22,7 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Setup Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.9'
 
@@ -32,15 +32,15 @@ jobs:
         pip install -r requirements.txt
         
     - name: Run CodeQL Analysis
-      uses: github/codeql-action/init@v2
+      uses: github/codeql-action/init@v3
       with:
         languages: python
         
     - name: Autobuild
-      uses: github/codeql-action/autobuild@v2
+      uses: github/codeql-action/autobuild@v3
 
     - name: Perform CodeQL Analysis
-      uses: github/codeql-action/analyze@v2
+      uses: github/codeql-action/analyze@v3
       with:
         output: sarif-results
         upload: false
@@ -68,7 +68,7 @@ jobs:
         python scripts/parse_sarif.py
 
     - name: Upload security results
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: security-results
         path: |
