@@ -8,9 +8,24 @@ on:
   schedule:
     - cron: '0 2 * * 1'
 
-jobs: 
+jobs:
   security-scan:
     runs-on: ubuntu-latest
+
+    services:
+      app:
+        image: python:3.9
+        ports:
+          - 5000:5000
+        options: >-
+          --health-cmd "curl -f http://localhost:5000 || exit 1"
+          --health-interval 5s
+          --health-timeout 2s
+          --health-retries 10
+        volumes:
+          - ./:/app
+        command: >
+          bash -c "cd /app && pip install -r requirements.txt && python src/app.py"
 
     permissions:
       contents: read
@@ -50,20 +65,18 @@ jobs:
       run: |
         safety check --json --output safety-results.json || true
 
-    - name: Start application for DAST
+    - name: Wait for app service
       run: |
-        python src/app.py &
+        echo "Waiting 10s for app service to be ready..."
         sleep 10
 
     - name: Run OWASP ZAP Scan
       uses: zaproxy/action-full-scan@v0.7.0
       with:
-        target: 'http://localhost:5000'
-        rules_file_name: ''          # empty to avoid missing rules error
+        target: 'http://app:5000'        # Use service hostname
         cmd_options: '-a -j -m 2 -T 5'
         artifact_name: 'zap_report'
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        create_github_issues: false  # disable automatic GitHub issues
+        rules_file_name: ''               # optional rules file
 
     - name: Merge security results
       run: |
@@ -72,10 +85,10 @@ jobs:
     - name: Verify merged results
       run: |
         if [ -f merged-results.json ]; then
-          echo " merged-results.json exists"
+          echo "merged-results.json exists"
           ls -l merged-results.json
         else
-          echo " merged-results.json not found"
+          echo "merged-results.json not found"
         fi
 
     - name: Upload security results
