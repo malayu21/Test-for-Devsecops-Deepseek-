@@ -1,0 +1,17 @@
+body {
+    font-family: sans-serif;
+    margin: 2em;
+  }
+  .calculator {
+    margin-top: 1em;
+  }
+  button {
+    width: 40px;
+    height: 40px;
+  }
+  #display {
+    width: 180px;
+    height: 30px;
+    margin-bottom: 10px;
+  }
+  

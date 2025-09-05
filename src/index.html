@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Vulnerable Calculator</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <h1>Calculator + XSS Demo</h1>
+
+  <!-- Reflected XSS via "name" parameter (CWE‑79) -->
+  <form method="GET">
+    <input name="name" placeholder="Enter your name" />
+    <button type="submit">Say Hello</button>
+  </form>
+  <div id="greeting"></div>
+
+  <!-- CSRF demonstration (CWE‑352) -->
+  <form action="/transfer" method="POST">
+    <button type="submit" name="amount" value="100">Transfer ₱100</button>
+  </form>
+
+  <div class="calculator">
+    <input id="display" disabled />
+    <div class="keys">
+      <!-- calculator buttons -->
+      <button value="7">7</button>
+      <button value="8">8</button>
+      <button value="9">9</button>
+      <button value="/">÷</button>
+      <button value="4">4</button>
+      <button value="5">5</button>
+      <button value="6">6</button>
+      <button value="*">×</button>
+      <button value="1">1</button>
+      <button value="2">2</button>
+      <button value="3">3</button>
+      <button value="-">−</button>
+      <button value="0">0</button>
+      <button value=".">.</button>
+      <button id="equals" value="=">=</button>
+      <button value="+">+</button>
+      <button id="clear">C</button>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+  <script>
+    const greetingDiv = document.getElementById('greeting');
+    const params = new URLSearchParams(window.location.search);
+    const name = params.get('name');
+    if (name) {
+      // reflected XSS vulnerability
+      greetingDiv.innerHTML = `<div>Hello, ${name}!</div>`;
+    }
+  </script>
+</body>
+</html>
