@@ -103,9 +103,8 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: security-results
-        path: |
-          merged-results.json
-          sarif-results/
+        path: ./security-results/merged-results.json
+        retention-days: 7
     - name: Check for vulnerabilities
       id: check-vulns
       run: |
