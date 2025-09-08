@@ -29,7 +29,7 @@ def generate_fix(vulnerability):
     Provide a fix for this vulnerability in a web application context (e.g., HTML, Python, or server configuration).
     """
     try:
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-4o",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=500
