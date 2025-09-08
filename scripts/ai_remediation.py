@@ -1,7 +1,7 @@
 import json
 import os
 import argparse
-from openai import OpenAI
+import requests
 import time
 from pathlib import Path
 
@@ -11,14 +11,19 @@ class AIRemediator:
         Initialize the AI remediation system
         
         Args:
-            api_key: OpenAI API key for accessing GPT models
+            api_key: xAI API key for accessing Grok models
         """
-        self.client = OpenAI(api_key=api_key)
+        self.api_key = api_key
+        self.api_url = "https://api.x.ai/v1/chat/completions"  # Hypothetical xAI API endpoint
+        self.headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
         self.fixes = []  # Store all generated fixes
         self.fix_summary = []  # Human-readable summary
-        self.model_sast = "gpt-4o"  # Updated model for SAST
-        self.model_dependency = "gpt-3.5-turbo"  # Kept for dependency fixes
-        self.model_dast = "gpt-4o"  # Updated model for DAST
+        self.model_sast = "grok"  # Grok model for SAST
+        self.model_dependency = "grok"  # Grok model for dependency fixes
+        self.model_dast = "grok"  # Grok model for DAST
         
     def generate_sast_fix(self, vulnerability):
         """
@@ -30,15 +35,12 @@ class AIRemediator:
         Returns:
             Dict with fix information
         """
-        # Get the vulnerable code location
         location = vulnerability['locations'][0] if vulnerability['locations'] else {}
         file_path = location.get('file', '')
         line_number = location.get('line', 0)
         
-        # Read the actual vulnerable code
         vulnerable_code = self._read_code_context(file_path, line_number)
         
-        # Create a detailed prompt for the AI
         prompt = f"""
 You are a security expert tasked with fixing code vulnerabilities.
 
@@ -69,57 +71,49 @@ Respond in JSON format:
 Focus on OWASP security principles and Python best practices.
 """
         try:
-            response = self.client.chat.completions.create(
-                model=self.model_sast,
-                messages=[
+            payload = {
+                "model": self.model_sast,
+                "messages": [
                     {"role": "system", "content": "You are a cybersecurity expert specializing in secure code fixes."},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.1,
-                max_tokens=1000
-            )
+                "temperature": 0.1,
+                "max_tokens": 1000
+            }
             
-            # Parse AI response
-            ai_response = response.choices[0].message.content
+            response = requests.post(self.api_url, headers=self.headers, json=payload)
+            response.raise_for_status()
             
-            # Try to extract JSON from response
-            try:
-                # Sometimes AI wraps JSON in markdown, so clean it
-                if "```json" in ai_response:
-                    json_start = ai_response.find("```json") + 7
-                    json_end = ai_response.find("```", json_start)
-                    ai_response = ai_response[json_start:json_end]
-                
-                fix_data = json.loads(ai_response)
-                
-                # Structure the fix for our apply_fixes.py script
-                fix = {
-                    'type': 'sast',
-                    'file': file_path,
-                    'line': line_number,
-                    'vulnerability': vulnerability,
-                    'original_code': vulnerable_code,
-                    'fixed_code': fix_data.get('fixed_code', ''),
-                    'explanation': fix_data.get('explanation', ''),
-                    'confidence': fix_data.get('confidence', 'medium'),
-                    'ai_model': self.model_sast
-                }
-                
-                return fix
-                
-            except json.JSONDecodeError:
-                print(f"  AI returned invalid JSON for {file_path}:{line_number}")
-                return None
-                
-        except Exception as e:
+            ai_response = response.json()['choices'][0]['message']['content']
+            
+            if "```json" in ai_response:
+                json_start = ai_response.find("```json") + 7
+                json_end = ai_response.find("```", json_start)
+                ai_response = ai_response[json_start:json_end]
+            
+            fix_data = json.loads(ai_response)
+            
+            fix = {
+                'type': 'sast',
+                'file': file_path,
+                'line': line_number,
+                'vulnerability': vulnerability,
+                'original_code': vulnerable_code,
+                'fixed_code': fix_data.get('fixed_code', ''),
+                'explanation': fix_data.get('explanation', ''),
+                'confidence': fix_data.get('confidence', 'medium'),
+                'ai_model': self.model_sast
+            }
+            
+            return fix
+            
+        except (requests.RequestException, json.JSONDecodeError) as e:
             print(f" Error generating SAST fix for {file_path}:{line_number}: {e}")
             return None
 
     def generate_dependency_fix(self, vulnerability):
         """
         Generate fix for dependency vulnerabilities
-        
-        These are usually simple - just update the package version
         """
         package = vulnerability.get('package', '')
         current_version = vulnerability.get('installed_version', '')
@@ -146,16 +140,18 @@ Respond in JSON:
 }}
 """
         try:
-            response = self.client.chat.completions.create(
-                model=self.model_dependency,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.1,
-                max_tokens=500
-            )
+            payload = {
+                "model": self.model_dependency,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.1,
+                "max_tokens": 500
+            }
             
-            ai_response = response.choices[0].message.content
+            response = requests.post(self.api_url, headers=self.headers, json=payload)
+            response.raise_for_status()
             
-            # Clean and parse JSON
+            ai_response = response.json()['choices'][0]['message']['content']
+            
             if "```json" in ai_response:
                 json_start = ai_response.find("```json") + 7
                 json_end = ai_response.find("```", json_start)
@@ -177,15 +173,13 @@ Respond in JSON:
             
             return fix
             
-        except Exception as e:
+        except (requests.RequestException, json.JSONDecodeError) as e:
             print(f" Error generating dependency fix for {package}: {e}")
             return None
 
     def generate_dast_fix(self, vulnerability):
         """
         Generate fix for DAST (web application) vulnerabilities
-        
-        These are usually configuration or code changes for web security
         """
         url = vulnerability.get('url', '')
         evidence = vulnerability.get('evidence', '')
@@ -212,19 +206,21 @@ Respond in JSON:
 }}
 """
         try:
-            response = self.client.chat.completions.create(
-                model=self.model_dast,
-                messages=[
+            payload = {
+                "model": self.model_dast,
+                "messages": [
                     {"role": "system", "content": "You are a web security expert specializing in fixing OWASP Top 10 vulnerabilities."},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.1,
-                max_tokens=800
-            )
+                "temperature": 0.1,
+                "max_tokens": 800
+            }
             
-            ai_response = response.choices[0].message.content
+            response = requests.post(self.api_url, headers=self.headers, json=payload)
+            response.raise_for_status()
             
-            # Clean and parse JSON
+            ai_response = response.json()['choices'][0]['message']['content']
+            
             if "```json" in ai_response:
                 json_start = ai_response.find("```json") + 7
                 json_end = ai_response.find("```", json_start)
@@ -246,31 +242,21 @@ Respond in JSON:
             
             return fix
             
-        except Exception as e:
+        except (requests.RequestException, json.JSONDecodeError) as e:
             print(f" Error generating DAST fix for {url}: {e}")
             return None
 
     def _read_code_context(self, file_path, line_number, context_lines=5):
         """
         Read vulnerable code with surrounding context
-        
-        Args:
-            file_path: Path to the vulnerable file
-            line_number: Line number with the issue
-            context_lines: How many lines before/after to include
-            
-        Returns:
-            String with code context
         """
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 lines = f.readlines()
             
-            # Calculate range (1-indexed to 0-indexed)
             start = max(0, line_number - context_lines - 1)
             end = min(len(lines), line_number + context_lines)
             
-            # Add line numbers for clarity
             context = ""
             for i in range(start, end):
                 marker = ">>> " if i == line_number - 1 else "    "
@@ -286,13 +272,9 @@ Respond in JSON:
     def process_vulnerabilities(self, vulnerabilities_file):
         """
         Main function to process all vulnerabilities and generate fixes
-        
-        Args:
-            vulnerabilities_file: Path to merged-results.json
         """
         print(" Starting AI-powered vulnerability remediation...")
         
-        # Load vulnerabilities
         with open(vulnerabilities_file, 'r') as f:
             vulns = json.load(f)
         
@@ -301,7 +283,6 @@ Respond in JSON:
         
         processed = 0
         
-        # Process SAST vulnerabilities (source code issues)
         print(f"\n Processing {len(vulns['sast'])} SAST vulnerabilities...")
         for vuln in vulns['sast']:
             print(f"   Fixing: {vuln['rule_id']} in {vuln['locations'][0].get('file', 'unknown')}...")
@@ -311,9 +292,8 @@ Respond in JSON:
                 self.fix_summary.append(f"SAST: {vuln['rule_id']} in {fix['file']}")
             
             processed += 1
-            time.sleep(1)  # Rate limit API calls to avoid hitting limits
+            time.sleep(1)
             
-        # Process dependency vulnerabilities  
         print(f"\n Processing {len(vulns['dependencies'])} dependency vulnerabilities...")
         for vuln in vulns['dependencies']:
             print(f"   Fixing: {vuln['package']} v{vuln['installed_version']}...")
@@ -323,9 +303,8 @@ Respond in JSON:
                 self.fix_summary.append(f"Dependency: {vuln['package']} -> {fix['recommended_version']}")
             
             processed += 1
-            time.sleep(0.5)  # Shorter delay for simpler dependency fixes
+            time.sleep(0.5)
             
-        # Process DAST vulnerabilities (web app issues)
         print(f"\n Processing {len(vulns['dast'])} DAST vulnerabilities...")
         for vuln in vulns['dast']:
             print(f"   Fixing: {vuln['rule_id']} at {vuln.get('url', 'unknown URL')}...")
@@ -344,9 +323,6 @@ Respond in JSON:
     def save_fixes(self, output_file):
         """
         Save all generated fixes to JSON file for apply_fixes.py to use
-        
-        Args:
-            output_file: Path where to save the fixes JSON
         """
         fixes_data = {
             'metadata': {
@@ -361,7 +337,6 @@ Respond in JSON:
         with open(output_file, 'w') as f:
             json.dump(fixes_data, f, indent=2)
             
-        # Also save human-readable summary
         with open('fixes-summary.txt', 'w') as f:
             f.write(" AI-Generated Security Fixes Summary\n")
             f.write("=" * 50 + "\n\n")
@@ -382,30 +357,24 @@ def main():
     parser = argparse.ArgumentParser(description='AI-powered security vulnerability remediation')
     parser.add_argument('--input', required=True, help='Path to merged vulnerabilities JSON file')
     parser.add_argument('--output', required=True, help='Path to save generated fixes JSON')
-    parser.add_argument('--api-key', help='OpenAI API key (or set OPENAI_API_KEY env var)')
+    parser.add_argument('--api-key', help='xAI API key (or set XAI_API_KEY env var)')
     
     args = parser.parse_args()
     
-    # Get API key from argument or environment
-    api_key = args.api_key or os.getenv('OPENAI_API_KEY')
+    api_key = args.api_key or os.getenv('XAI_API_KEY')
     if not api_key:
-        print(" Error: OpenAI API key required. Set OPENAI_API_KEY environment variable or use --api-key")
+        print(" Error: xAI API key required. Set XAI_API_KEY environment variable or use --api-key")
         exit(1)
     
-    # Check if input file exists
     if not os.path.exists(args.input):
         print(f" Error: Input file not found: {args.input}")
         exit(1)
     
     try:
-        # Initialize AI remediation system
         remediate = AIRemediator(api_key)
-        
-        # Process all vulnerabilities
         fixes = remediate.process_vulnerabilities(args.input)
         
         if fixes:
-            # Save fixes for the apply script
             remediate.save_fixes(args.output)
             print(f"\n Successfully generated {len(fixes)} fixes!")
             print(f" Next step: Run 'python scripts/apply_fixes.py --fixes {args.output}' to apply them")
