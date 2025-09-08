@@ -48,6 +48,12 @@ jobs:
         with:
           output: sarif-results
           upload: false
+          
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Upgrade safety
+        run: pip install --upgrade safety
 
       - name: Run Safety check
         run: |
