@@ -2,6 +2,9 @@ name: AI Security Remediation
 
 on:
   workflow_dispatch:
+  workflow_run:
+    workflows: ["Security Scan Pipeline"]
+    types: [completed]
 
 permissions:
   contents: write
@@ -29,15 +32,26 @@ jobs:
           echo "Checking rate limit..."
           curl -s -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github.v3+json" \
             https://api.github.com/rate_limit | jq .
-          echo "Checking branch protection..."
+          echo "Checking available artifacts..."
           curl -s -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github.v3+json" \
-            https://api.github.com/repos/malayu21/Test-for-Devsecops/branches/main/protection | jq .
+            https://api.github.com/repos/malayu21/Test-for-Devsecops/actions/runs/${{ github.run_id }}/artifacts | jq .
 
       - name: Download security results
         uses: actions/download-artifact@v4
         with:
           name: security-results
           path: ./security-results/
+        continue-on-error: false
+
+      - name: Verify artifact
+        run: |
+          if [ ! -f ./security-results/merged-results.json ]; then
+            echo "Error: merged-results.json not found in security-results artifact"
+            ls -l ./security-results/
+            exit 1
+          fi
+          echo "Artifact contents:"
+          cat ./security-results/merged-results.json
 
       - name: Setup Python
         uses: actions/setup-python@v5
