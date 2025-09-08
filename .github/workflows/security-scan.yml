@@ -116,8 +116,8 @@ jobs:
         else
           echo "vulns_found=false" >> $GITHUB_OUTPUT
         fi
-    - name: Trigger AI Remediation
-       trigger-ai-remediation:
+
+  Trigger-AI-Remediation:
         needs: security-scan
         if: needs.security-scan.outputs.vulns_found == 'true'
         uses: ./.github/workflows/ai-remediation.yml
