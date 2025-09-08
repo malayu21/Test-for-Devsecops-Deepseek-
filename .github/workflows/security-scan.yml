@@ -27,7 +27,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y jq
           python -m pip install --upgrade pip
-          pip install -r requirements.txt || echo "No requirements.txt found, skipping pip install"
+          pip install -r requirements.txt || echo "No requirements.txt found or invalid, skipping pip install"
           pip install safety
 
       - name: Setup Python
@@ -53,12 +53,15 @@ jobs:
         run: |
           echo "Running safety check..."
           if [ -s requirements.txt ]; then
-            safety check --output json > safety-results.json || { echo "Safety check failed"; exit 1; }
+            echo "Contents of requirements.txt:"
+            cat requirements.txt
+            safety check --output json > safety-results.json 2> safety-error.log || { echo "Safety check failed, see error log:"; cat safety-error.log; exit 1; }
           else
             echo "No requirements.txt found, creating empty safety-results.json"
             echo '{"vulnerabilities": []}' > safety-results.json
           fi
           ls -l safety-results.json || { echo "Failed to create safety-results.json"; exit 1; }
+          cat safety-results.json
 
       - name: Install ngrok
         run: |
