@@ -1,91 +1,104 @@
+```python
 import json
 import os
-import glob
-import logging
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+def parse_codeql_sarif(sarif_file):
+    """Parse CodeQL SARIF file for SAST vulnerabilities."""
+    try:
+        with open(sarif_file, 'r') as f:
+            sarif = json.load(f)
+        results = sarif.get('runs', [{}])[0].get('results', [])
+        vulnerabilities = []
+        for result in results:
+            rule_id = result.get('ruleId', 'unknown')
+            message = result.get('message', {}).get('text', 'No description')
+            severity = result.get('level', 'note').capitalize()
+            locations = [
+                {
+                    'file': loc.get('physicalLocation', {}).get('artifactLocation', {}).get('uri', ''),
+                    'line': loc.get('physicalLocation', {}).get('region', {}).get('startLine', 0)
+                } for loc in result.get('locations', [])
+            ]
+            vulnerabilities.append({
+                'rule_id': f"codeql-{rule_id}",
+                'message': message,
+                'severity': severity,
+                'locations': locations
+            })
+        return vulnerabilities
+    except Exception as e:
+        print(f"Error parsing CodeQL SARIF: {e}")
+        return []
 
-def parse_codeql_results():
-    results = []
-    sarif_files = glob.glob("sarif-results/*.sarif")
-    for sarif_file in sarif_files:
-        try:
-            with open(sarif_file, 'r') as f:
-                sarif_data = json.load(f)
-            for run in sarif_data.get('runs', []):
-                for result in run.get('results', []):
-                    vuln = {
-                        'rule_id': result.get('ruleId'),
-                        'message': result.get('message', {}).get('text'),
-                        'location': result.get('locations', [{}])[0].get('physicalLocation', {}).get('artifactLocation', {}).get('uri'),
-                        'severity': result.get('level', 'warning')
-                    }
-                    results.append(vuln)
-        except Exception as e:
-            logger.error(f"Error parsing CodeQL SARIF file {sarif_file}: {str(e)}")
-    return results
-
-def parse_safety_results():
-    results = []
-    safety_file = 'safety-results.json'
-    if not os.path.exists(safety_file):
-        logger.warning(f"No Safety report file found: {safety_file}, returning empty results")
-        return results
+def parse_safety_results(safety_file):
+    """Parse Safety JSON file for dependency vulnerabilities."""
     try:
         with open(safety_file, 'r') as f:
-            safety_data = json.load(f)
-        for issue in safety_data.get('vulnerabilities', []):
-            vuln = {
-                'rule_id': f"safety-{issue.get('id')}",
-                'message': issue.get('description'),
-                'package': issue.get('package'),
-                'severity': issue.get('severity', 'warning')
-            }
-            results.append(vuln)
+            safety = json.load(f)
+        vulnerabilities = []
+        for vuln in safety.get('vulnerabilities', []):
+            vulnerabilities.append({
+                'rule_id': f"safety-{vuln.get('id', 'unknown')}",
+                'package': vuln.get('package_name', ''),
+                'installed_version': vuln.get('analyzed_version', ''),
+                'message': vuln.get('advisory', 'No advisory'),
+                'severity': vuln.get('severity', 'Medium').capitalize()
+            })
+        return vulnerabilities
     except Exception as e:
-        logger.error(f"Error parsing Safety results: {str(e)}")
-    return results
+        print(f"Error parsing Safety results: {e}")
+        return []
 
-def parse_zap_results():
-    results = []
-    zap_files = ['report_json.json']
-    for zap_file in zap_files:
-        if not os.path.exists(zap_file):
-            logger.warning(f"No ZAP report file found: {zap_file}")
-            continue
-        try:
-            with open(zap_file, 'r') as f:
-                zap_data = json.load(f)
-            for site in zap_data.get('site', []):
-                for alert in site.get('alerts', []):
-                    vuln = {
-                        'rule_id': f"zap-{alert.get('alertid')}",
-                        'message': alert.get('alert'),
-                        'location': alert.get('uri'),
-                        'severity': alert.get('riskdesc', 'warning').split(' ')[0].lower()
-                    }
-                    results.append(vuln)
-        except Exception as e:
-            logger.error(f"Error parsing ZAP report {zap_file}: {str(e)}")
-    return results
+def parse_zap_results(zap_file):
+    """Parse ZAP JSON report for DAST vulnerabilities."""
+    try:
+        with open(zap_file, 'r') as f:
+            zap = json.load(f)
+        vulnerabilities = []
+        for site in zap.get('site', []):
+            for alert in site.get('alerts', []):
+                rule_id = alert.get('alertRef', 'unknown')
+                severity = alert.get('riskdesc', 'Informational').split(' ')[0].capitalize()
+                vulnerabilities.append({
+                    'rule_id': f"zap-{rule_id}",
+                    'url': site.get('@name', ''),
+                    'method': alert.get('method', 'GET'),
+                    'message': alert.get('alert', 'No description'),
+                    'evidence': alert.get('evidence', ''),
+                    'solution': alert.get('solution', ''),
+                    'severity': severity
+                })
+        return vulnerabilities
+    except Exception as e:
+        print(f"Error parsing ZAP results: {e}")
+        return []
 
 def main():
-    all_vulns = {
-        'sast': parse_codeql_results(),
-        'dependencies': parse_safety_results(),
-        'dast': parse_zap_results(),
-        'summary': {'total_vulnerabilities': 0}
+    """Merge security results from CodeQL, Safety, and ZAP."""
+    codeql_file = 'sarif-results/python.sarif'
+    safety_file = 'safety-results.json'
+    zap_file = 'report_json.json'
+    
+    sast_vulns = parse_codeql_sarif(codeql_file) if os.path.exists(codeql_file) else []
+    dep_vulns = parse_safety_results(safety_file) if os.path.exists(safety_file) else []
+    dast_vulns = parse_zap_results(zap_file) if os.path.exists(zap_file) else []
+    
+    merged_results = {
+        'sast': sast_vulns,
+        'dependencies': dep_vulns,
+        'dast': dast_vulns,
+        'summary': {
+            'total_vulnerabilities': len(sast_vulns) + len(dep_vulns) + len(dast_vulns)
+        }
     }
-    all_vulns['summary']['total_vulnerabilities'] = (
-        len(all_vulns['sast']) + len(all_vulns['dependencies']) + len(all_vulns['dast'])
-    )
+    
     os.makedirs('security-results', exist_ok=True)
     output_file = 'security-results/merged-results.json'
     with open(output_file, 'w') as f:
-        json.dump(all_vulns, f, indent=2)
-    logger.info(f"Merged security results into {output_file}")
+        json.dump(merged_results, f, indent=2)
+    
+    print(f"Merged results saved to {output_file}")
 
 if __name__ == "__main__":
     main()
+```
