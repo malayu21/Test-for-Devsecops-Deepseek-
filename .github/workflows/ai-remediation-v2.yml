@@ -6,6 +6,13 @@ on:
     types: [completed]
   workflow_dispatch:
 
+permissions:
+  contents: write
+  actions: write
+  security-events: write
+  pull-requests: write
+  issues: write
+
 jobs:
   remediate:
     runs-on: ubuntu-latest
@@ -14,45 +21,105 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
-      
-    - name: Set up Python
-      uses: actions/setup-python@v5
       with:
-        python-version: '3.11'
-        
-    - name: Install dependencies
+        token: ${{ secrets.PAT_TOKEN }}
+
+    - name: Debug permissions and API
+      env:
+        TOKEN: ${{ secrets.PAT_TOKEN }}
       run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        
+        echo "Checking repository permissions..."
+        curl -s -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github.v3+json" \
+          https://api.github.com/repos/malayu21/Test-for-Devsecops/collaborators/malayu21/permission | jq .
+        echo "Checking rate limit..."
+        curl -s -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github.v3+json" \
+          https://api.github.com/rate_limit | jq .
+        echo "Checking available artifacts for run ${{ github.event.workflow_run.id }}..."
+        curl -s -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github.v3+json" \
+          https://api.github.com/repos/malayu21/Test-for-Devsecops/actions/runs/${{ github.event.workflow_run.id }}/artifacts | jq .
+        echo "Workflow run details..."
+        curl -s -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github.v3+json" \
+          https://api.github.com/repos/malayu21/Test-for-Devsecops/actions/runs/${{ github.event.workflow_run.id }} | jq .
+
+    - name: Wait for artifact availability
+      run: |
+        echo "Waiting for artifact to be available..."
+        sleep 30
+
     - name: Download security results
+      id: download-artifact
       uses: actions/download-artifact@v4
       with:
         name: security-results
         path: security-results
+        run-id: ${{ github.event.workflow_run.id }}
         github-token: ${{ secrets.PAT_TOKEN }}
-        
+      continue-on-error: true
+
+    - name: Retry download security results
+      if: steps.download-artifact.outcomes.success != true
+      env:
+        TOKEN: ${{ secrets.PAT_TOKEN }}
+      run: |
+        echo "Retrying artifact download..."
+        ARTIFACT_ID=$(curl -s -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github.v3+json" \
+          https://api.github.com/repos/malayu21/Test-for-Devsecops/actions/runs/${{ github.event.workflow_run.id }}/artifacts | \
+          jq -r '.artifacts[] | select(.name == "security-results") | .id')
+        if [ -z "$ARTIFACT_ID" ]; then
+          echo "Error: No security-results artifact found"
+          exit 1
+        fi
+        echo "Found artifact ID: $ARTIFACT_ID"
+        curl -s -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github.v3+json" \
+          -L https://api.github.com/repos/malayu21/Test-for-Devsecops/actions/artifacts/$ARTIFACT_ID/zip -o security-results.zip
+        unzip -o security-results.zip -d ./security-results/ || { echo "Failed to unzip artifact"; exit 1; }
+        ls -l ./security-results/
+
+    - name: Verify artifact
+      run: |
+        echo "Checking security-results artifact..."
+        ls -l ./security-results/ || { echo "No files found in security-results directory"; exit 1; }
+        if [ ! -f ./security-results/merged-results.json ]; then
+          echo "Error: merged-results.json not found in security-results artifact"
+          ls -l ./security-results/
+          exit 1
+        fi
+        echo "Artifact contents:"
+        cat ./security-results/merged-results.json
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y jq unzip
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
     - name: Generate AI fixes
       env:
         XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
       run: |
-        python scripts/ai_remediation.py --input security-results/merged-results.json --output security-fixes/fixes.json
-        
+        python scripts/ai_remediation.py --input security-results/merged-results.json --output security-fixes/fixes.json || { echo "AI remediation failed"; exit 1; }
+
     - name: Upload fixes artifact
       uses: actions/upload-artifact@v4
       with:
         name: security-fixes
         path: security-fixes/
-        
+
     - name: Apply fixes and create PR
       env:
         GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
       run: |
-        python scripts/apply_fixes.py --fixes security-fixes/fixes.json
+        python scripts/apply_fixes.py --fixes security-fixes/fixes.json || { echo "Apply fixes failed"; exit 1; }
         git config user.name "GitHub Actions Bot"
         git config user.email "actions@github.com"
         git checkout -b fix/security-vulnerabilities-${{ github.run_id }}
         git add .
-        git commit -m "Apply AI-generated security fixes"
+        git commit -m "Apply AI-generated security fixes\n\n$(cat fixes-summary.txt)" || exit 0
         git push origin fix/security-vulnerabilities-${{ github.run_id }}
-        gh pr create --title "Security Fixes for Run ${{ github.run_id }}" --body "Automated fixes for vulnerabilities" --base main --head fix/security-vulnerabilities-${{ github.run_id }}
+        gh pr create --title "Security Fixes for Run ${{ github.run_id }}" --body "Automated Security Fixes\n\n$(cat fixes-summary.txt)\n\n- SAST Issues: $(jq '.sast | length' security-results/merged-results.json)\n- Dependency Issues: $(jq '.dependencies | length' security-results/merged-results.json)\n- DAST Issues: $(jq '.dast | length' security-results/merged-results.json)\n\nPlease review carefully before merging." --base main --head fix/security-vulnerabilities-${{ github.run_id }}
