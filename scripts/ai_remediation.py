@@ -1,3 +1,11 @@
+```python
+"""
+ai_remediation.py - AI-powered security vulnerability fixing
+
+This script takes security vulnerabilities and uses AI (OpenAI GPT) to generate fixes.
+It's the "brain" of our automated security remediation system.
+"""
+
 import json
 import os
 import argparse
@@ -65,7 +73,6 @@ Respond in JSON format:
 
 Focus on OWASP security principles and Python best practices.
 """
-
         try:
             response = self.client.chat.completions.create(
                 model="gpt-4",  # Use GPT-4 for better security knowledge
@@ -143,7 +150,6 @@ Respond in JSON:
     "confidence": "high/medium/low"
 }}
 """
-
         try:
             response = self.client.chat.completions.create(
                 model="gpt-3.5-turbo",  # Cheaper model for simpler dependency fixes
@@ -210,7 +216,6 @@ Respond in JSON:
     "confidence": "high/medium/low"
 }}
 """
-
         try:
             response = self.client.chat.completions.create(
                 model="gpt-4",
