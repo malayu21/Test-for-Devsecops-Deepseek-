@@ -123,6 +123,6 @@ jobs:
           github.rest.actions.createWorkflowDispatch({
             owner: context.repo.owner,
             repo: context.repo.repo,
-            workflow_id: 'ai-remediation.yml',
+            workflow_id: 'ai-remediation-v2.yml',
             ref: context.ref
           })
