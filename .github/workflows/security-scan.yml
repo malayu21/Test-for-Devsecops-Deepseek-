@@ -51,7 +51,14 @@ jobs:
 
       - name: Run Safety check
         run: |
-          safety check --json --output safety-results.json || true
+          echo "Running safety check..."
+          if [ -s requirements.txt ]; then
+            safety check --json --output safety-results.json || { echo "Safety check failed"; exit 1; }
+          else
+            echo "No requirements.txt found, creating empty safety-results.json"
+            echo '{"vulnerabilities": []}' > safety-results.json
+          fi
+          ls -l safety-results.json || { echo "Failed to create safety-results.json"; exit 1; }
 
       - name: Install ngrok
         run: |
