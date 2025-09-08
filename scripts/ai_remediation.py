@@ -7,7 +7,7 @@ from tenacity import retry, stop_after_attempt, wait_fixed
 from tqdm import tqdm
 
 # Configure OpenAI API
-openai.api_key = os.getenv("OPENAI_API_KEY")
+client = Openai.api_key = os.getenv("OPENAI_API_KEY")
 
 def load_vulnerabilities(input_file):
     try:
