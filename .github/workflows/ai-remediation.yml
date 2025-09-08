@@ -8,6 +8,7 @@ permissions:
   actions: write
   security-events: write
   pull-requests: write
+  issues: write
 
 jobs:
   ai-fix-generation:
