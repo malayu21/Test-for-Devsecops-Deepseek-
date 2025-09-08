@@ -20,6 +20,17 @@ jobs:
       uses: actions/checkout@v4
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
+    - name: Create fix branch
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "AI Security Bot"
+        BRANCH_NAME="ai-security-fixes-$(date +%Y%m%d-%H%M%S)"
+        git checkout -b $BRANCH_NAME
+        git add .
+        git commit -m "AI Security Fixes ..." || exit 0
+        git push --force origin $BRANCH_NAME
+        echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV 
+        
     - name: Debug GITHUB_TOKEN permissions
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
