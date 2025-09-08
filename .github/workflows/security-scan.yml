@@ -20,12 +20,11 @@ jobs:
       uses: actions/checkout@v4
       with:
         token: ${{ secrets.PAT_TOKEN }}  # Use PAT for checkout
-  
+        
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y jq ngrok
-        curl -s https://ngrok-agent.s3.amazonaws.com/ngrok.asc | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc
+        sudo apt-get install -y jq
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         pip install safety
@@ -49,9 +48,9 @@ jobs:
         safety check --json --output safety-results.json || true
     - name: Install ngrok
       run: |
-        curl -s https://ngrok-agent.s3.amazonaws.com/ngrok.asc | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc
-        sudo apt-get update
-        sudo apt-get install -y ngrok
+        curl -s https://ngrok-agent.s3.amazonaws.com/ngrok-v3-stable-linux-amd64.tar.gz | tar xz
+        sudo mv ngrok /usr/local/bin/ngrok
+        ngrok version
     - name: Start local server for DAST
       run: |
         cd src
