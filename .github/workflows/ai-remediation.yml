@@ -1,7 +1,7 @@
 name: AI Security Remediation
 
 on:
-  workflow_dispatch:  # Required for API-based triggering
+  workflow_dispatch:  
 
 permissions:
   contents: write
