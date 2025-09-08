@@ -49,18 +49,22 @@ def parse_safety_results(safety_file):
         return []
 
 def parse_zap_results(zap_file):
-    """Parse ZAP JSON report for DAST vulnerabilities."""
+    """Parse ZAP JSON report for DAST vulnerabilities, filtering app-specific URLs."""
     try:
         with open(zap_file, 'r') as f:
             zap = json.load(f)
         vulnerabilities = []
+        app_url = "https://51d829f58a12.ngrok-free.app"  # Replace with dynamic ngrok URL if needed
         for site in zap.get('site', []):
+            site_url = site.get('@name', '')
+            if app_url not in site_url:  # Filter out external URLs
+                continue
             for alert in site.get('alerts', []):
                 rule_id = alert.get('alertRef', 'unknown')
                 severity = alert.get('riskdesc', 'Informational').split(' ')[0].capitalize()
                 vulnerabilities.append({
                     'rule_id': f"zap-{rule_id}",
-                    'url': site.get('@name', ''),
+                    'url': site_url,
                     'method': alert.get('method', 'GET'),
                     'message': alert.get('alert', 'No description'),
                     'evidence': alert.get('evidence', ''),
