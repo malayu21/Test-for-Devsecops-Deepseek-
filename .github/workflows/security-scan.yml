@@ -16,8 +16,7 @@ jobs:
       security-events: write
       actions: read
       contents: read
-    outputs:
-      vulns_found: ${{ steps.check-vulns.outputs.vulns_found }}
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
