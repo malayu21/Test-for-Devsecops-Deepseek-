@@ -1,8 +1,6 @@
 name: AI Security Remediation
-
 on:
   workflow_dispatch:
-
 permissions:
   contents: write
   actions: write
