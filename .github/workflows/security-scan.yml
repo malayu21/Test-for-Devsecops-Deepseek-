@@ -7,6 +7,7 @@ on:
     branches: [main]
   schedule:
     - cron: '0 2 * * 1'
+  workflow_dispatch:
 
 jobs:
   security-scan:
@@ -16,112 +17,120 @@ jobs:
       actions: read
       contents: read
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        token: ${{ secrets.PAT_TOKEN }}
-  
-    - name: Install dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y jq
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install safety
-    - name: Setup Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
-    - name: Run CodeQL Analysis
-      uses: github/codeql-action/init@v3
-      with:
-        languages: python
-    - name: Autobuild
-      uses: github/codeql-action/autobuild@v3
-    - name: Perform CodeQL Analysis
-      uses: github/codeql-action/analyze@v3
-      with:
-        output: sarif-results
-        upload: false
-    - name: Run Safety check
-      run: |
-        safety check --json --output safety-results.json || true
-    - name: Install ngrok
-      run: |
-        curl -s -o ngrok.tar.gz https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tar.gz
-        tar -xzf ngrok.tar.gz || { echo "Failed to extract ngrok.tar.gz"; exit 1; }
-        sudo mv ngrok /usr/local/bin/ngrok
-        rm ngrok.tar.gz
-        ngrok version || { echo "ngrok installation failed"; exit 1; }
-    - name: Configure ngrok authtoken
-      run: |
-        ngrok authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
-    - name: Create ngrok configuration
-      run: |
-        cat > ngrok.yml <<EOF
-        version: "2"
-        authtoken: ${{ secrets.NGROK_AUTH_TOKEN }}
-        tunnels:
-          app:
-            proto: http
-            addr: 5000
-        EOF
-    - name: Start local server for DAST
-      run: |
-        cd src
-        python -m http.server 5000 --bind 127.0.0.1 &
-        sleep 10
-        ngrok start --all --config ../ngrok.yml &
-        sleep 10
-        export ZAP_TARGET=$(curl -s http://localhost:4040/api/tunnels | jq -r '.tunnels[] | select(.name == "app") | .public_url')
-        if [ -z "$ZAP_TARGET" ]; then
-          echo "Failed to get ngrok tunnel URL"
-          exit 1
-        fi
-        echo "ZAP_TARGET=$ZAP_TARGET" >> $GITHUB_ENV
-    - name: Run OWASP ZAP Scan
-      run: |
-        touch report_json.json report_md.md report_html.html
-        chmod a+w report_json.json report_md.md report_html.html
-        docker run -v $(pwd):/zap/wrk/:rw --network=host -t ghcr.io/zaproxy/zaproxy:stable \
-          zap-full-scan.py -t ${{ env.ZAP_TARGET }} -J report_json.json -w report_md.md -r report_html.html -a -j -m 2 -T 5 -I || true
-    - name: Verify ZAP report files
-      run: |
-        ls -l report_json.json report_md.md report_html.html || { echo "ZAP report files missing"; exit 1; }
-    - name: Upload ZAP reports
-      uses: actions/upload-artifact@v4
-      with:
-        name: zap-report
-        path: |
-          report_json.json
-          report_md.md
-          report_html.html
-    - name: Merge security results
-      run: |
-        python scripts/parse_sarif.py || { echo "Failed to merge security results"; exit 1; }
-    - name: Upload security results
-      uses: actions/upload-artifact@v4
-      with:
-        name: security-results
-        path: ./security-results/merged-results.json
-        retention-days: 7
-    - name: Check for vulnerabilities
-      id: check-vulns
-      run: |
-        if [ -s merged-results.json ]; then
-          echo "vulns_found=true" >> $GITHUB_OUTPUT
-        else
-          echo "vulns_found=false" >> $GITHUB_OUTPUT
-        fi
-    - name: Trigger AI Remediation
-      if: steps.check-vulns.outputs.vulns_found == 'true'
-      uses: actions/github-script@v6
-      with:
-        github-token: ${{ secrets.PAT_TOKEN }}
-        script: |
-          github.rest.actions.createWorkflowDispatch({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            workflow_id: 'ai-remediation-v2.yml',
-            ref: context.ref
-          })
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.PAT_TOKEN }}
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install safety
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run CodeQL Analysis
+        uses: github/codeql-action/init@v3
+        with:
+          languages: python
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          output: sarif-results
+          upload: false
+
+      - name: Run Safety check
+        run: |
+          safety check --json --output safety-results.json || true
+
+      - name: Install ngrok
+        run: |
+          curl -s -o ngrok.tar.gz https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tar.gz
+          tar -xzf ngrok.tar.gz || { echo "Failed to extract ngrok.tar.gz"; exit 1; }
+          sudo mv ngrok /usr/local/bin/ngrok
+          rm ngrok.tar.gz
+          ngrok version || { echo "ngrok installation failed"; exit 1; }
+
+      - name: Configure ngrok authtoken
+        run: |
+          ngrok authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
+
+      - name: Create ngrok configuration
+        run: |
+          cat > ngrok.yml <<EOF
+          version: "2"
+          authtoken: ${{ secrets.NGROK_AUTH_TOKEN }}
+          tunnels:
+            app:
+              proto: http
+              addr: 5000
+          EOF
+
+      - name: Start local server for DAST
+        run: |
+          cd src
+          python -m http.server 5000 --bind 127.0.0.1 &
+          sleep 10
+          ngrok start --all --config ../ngrok.yml &
+          sleep 10
+          export ZAP_TARGET=$(curl -s http://localhost:4040/api/tunnels | jq -r '.tunnels[] | select(.name == "app") | .public_url')
+          if [ -z "$ZAP_TARGET" ]; then
+            echo "Failed to get ngrok tunnel URL"
+            exit 1
+          fi
+          echo "ZAP_TARGET=$ZAP_TARGET" >> $GITHUB_ENV
+
+      - name: Run OWASP ZAP Scan
+        run: |
+          touch report_json.json report_md.md report_html.html
+          chmod a+w report_json.json report_md.md report_html.html
+          docker run -v $(pwd):/zap/wrk/:rw --network=host -t ghcr.io/zaproxy/zaproxy:stable \
+            zap-full-scan.py -t ${{ env.ZAP_TARGET }} -J report_json.json -w report_md.md -r report_html.html -a -j -m 2 -T 5 -I || true
+
+      - name: Verify ZAP report files
+        run: |
+          ls -l report_json.json report_md.md report_html.html || { echo "ZAP report files missing"; exit 1; }
+
+      - name: Upload ZAP reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-report
+          path: |
+            report_json.json
+            report_md.md
+            report_html.html
+
+      - name: Merge security results
+        run: |
+          mkdir -p security-results
+          python scripts/parse_sarif.py \
+            --codeql sarif-results/python.sarif \
+            --zap report_json.json \
+            --safety safety-results.json \
+            --output security-results/merged-results.json || { echo "Failed to merge security results"; exit 1; }
+
+      - name: Upload security results
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-results
+          path: ./security-results/merged-results.json
+          retention-days: 7
+
+      - name: Check for vulnerabilities
+        id: check-vulns
+        run: |
+          if [ -s security-results/merged-results.json ]; then
+            echo "vulns_found=true" >> $GITHUB_OUTPUT
+          else
+            echo "vulns_found=false" >> $GITHUB_OUTPUT
+          fi
