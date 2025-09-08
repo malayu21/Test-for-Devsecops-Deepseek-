@@ -1,6 +1,7 @@
 name: Security Scan Pipeline
 
 on:
+  workflow_dispatch:
   push:
     branches: [main, develop]
   pull_request:
@@ -45,7 +46,7 @@ jobs:
         upload: false
     - name: Run Safety check
       run: |
-        safety check --json --output safety-results.json || true
+        safety check --output json > safety-results.json || true
     - name: Install ngrok
       run: |
         curl -s -o ngrok.tar.gz https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tar.gz
