@@ -16,6 +16,9 @@ class AIRemediator:
         self.client = OpenAI(api_key=api_key)
         self.fixes = []  # Store all generated fixes
         self.fix_summary = []  # Human-readable summary
+        self.model_sast = "gpt-4o"  # Updated model for SAST
+        self.model_dependency = "gpt-3.5-turbo"  # Kept for dependency fixes
+        self.model_dast = "gpt-4o"  # Updated model for DAST
         
     def generate_sast_fix(self, vulnerability):
         """
@@ -67,12 +70,12 @@ Focus on OWASP security principles and Python best practices.
 """
         try:
             response = self.client.chat.completions.create(
-                model="gpt-4",  # Use GPT-4 for better security knowledge
+                model=self.model_sast,
                 messages=[
                     {"role": "system", "content": "You are a cybersecurity expert specializing in secure code fixes."},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.1,  # Low temperature for consistent, conservative fixes
+                temperature=0.1,
                 max_tokens=1000
             )
             
@@ -99,7 +102,7 @@ Focus on OWASP security principles and Python best practices.
                     'fixed_code': fix_data.get('fixed_code', ''),
                     'explanation': fix_data.get('explanation', ''),
                     'confidence': fix_data.get('confidence', 'medium'),
-                    'ai_model': 'gpt-4'
+                    'ai_model': self.model_sast
                 }
                 
                 return fix
@@ -109,7 +112,7 @@ Focus on OWASP security principles and Python best practices.
                 return None
                 
         except Exception as e:
-            print(f" Error generating fix for {file_path}:{line_number}: {e}")
+            print(f" Error generating SAST fix for {file_path}:{line_number}: {e}")
             return None
 
     def generate_dependency_fix(self, vulnerability):
@@ -144,7 +147,7 @@ Respond in JSON:
 """
         try:
             response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo",  # Cheaper model for simpler dependency fixes
+                model=self.model_dependency,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.1,
                 max_tokens=500
@@ -169,7 +172,7 @@ Respond in JSON:
                 'explanation': f"Update {package} to fix security vulnerability",
                 'breaking_changes': fix_data.get('breaking_changes', ''),
                 'confidence': fix_data.get('confidence', 'high'),
-                'ai_model': 'gpt-3.5-turbo'
+                'ai_model': self.model_dependency
             }
             
             return fix
@@ -210,7 +213,7 @@ Respond in JSON:
 """
         try:
             response = self.client.chat.completions.create(
-                model="gpt-4",
+                model=self.model_dast,
                 messages=[
                     {"role": "system", "content": "You are a web security expert specializing in fixing OWASP Top 10 vulnerabilities."},
                     {"role": "user", "content": prompt}
@@ -238,7 +241,7 @@ Respond in JSON:
                 'files_to_modify': fix_data.get('files_to_modify', []),
                 'explanation': fix_data.get('explanation', ''),
                 'confidence': fix_data.get('confidence', 'medium'),
-                'ai_model': 'gpt-4'
+                'ai_model': self.model_dast
             }
             
             return fix
