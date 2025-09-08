@@ -19,7 +19,7 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       with:
-        token: ${{ secrets.PAT_TOKEN }}  # Use PAT for checkout
+        token: ${{ secrets.PAT_TOKEN }}
         
     - name: Install dependencies
       run: |
@@ -48,9 +48,11 @@ jobs:
         safety check --json --output safety-results.json || true
     - name: Install ngrok
       run: |
-        curl -s https://ngrok-agent.s3.amazonaws.com/ngrok-v3-stable-linux-amd64.tar.gz | tar xz
+        curl -s -o ngrok.tar.gz https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tar.gz
+        tar -xzf ngrok.tar.gz || { echo "Failed to extract ngrok.tar.gz"; exit 1; }
         sudo mv ngrok /usr/local/bin/ngrok
-        ngrok version
+        rm ngrok.tar.gz
+        ngrok version || { echo "ngrok installation failed"; exit 1; }
     - name: Start local server for DAST
       run: |
         cd src
@@ -59,6 +61,10 @@ jobs:
         ngrok http 5000 &
         sleep 10
         export ZAP_TARGET=$(curl -s http://localhost:4040/api/tunnels | jq -r '.tunnels[0].public_url')
+        if [ -z "$ZAP_TARGET" ]; then
+          echo "Failed to get ngrok tunnel URL"
+          exit 1
+        fi
         echo "ZAP_TARGET=$ZAP_TARGET" >> $GITHUB_ENV
     - name: Run OWASP ZAP Scan
       run: |
