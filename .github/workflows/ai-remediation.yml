@@ -96,6 +96,11 @@ Please review these changes carefully before merging.
           security
           automated-fix
           needs-review
-        reviewers: |
-          GwynethMorata
-          malayu21
+        reviewers: malayu21
+        
+    - name: Upload logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: workflow-logs
+        path: '*.log'
