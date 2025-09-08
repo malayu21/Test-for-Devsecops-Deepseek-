@@ -1,10 +1,3 @@
-"""
-ai_remediation.py - AI-powered security vulnerability fixing
-
-This script takes security vulnerabilities and uses AI (OpenAI GPT) to generate fixes.
-It's the "brain" of our automated security remediation system.
-"""
-
 import json
 import os
 import argparse
@@ -425,3 +418,5 @@ def main():
         exit(1)
 
 if __name__ == "__main__":
+    main()
+```
