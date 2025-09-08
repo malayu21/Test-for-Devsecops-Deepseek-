@@ -20,7 +20,12 @@ jobs:
       uses: actions/checkout@v4
       with:
         token: ${{ secrets.PAT_TOKEN }}
-
+    - name: Verify ZAP rules file
+      run: |
+        if [ ! -f .zap/rules.tsv ]; then
+          echo "Error: .zap/rules.tsv not found"
+          exit 1
+        fi
     - name: Install dependencies
       run: |
         sudo apt-get update
@@ -71,7 +76,7 @@ jobs:
         cd src
         python -m http.server 5000 --bind 127.0.0.1 &
         sleep 10
-        ngrok start --all --config ngrok.yml &
+        ngrok start --all --config ../ngrok.yml &
         sleep 10
         export ZAP_TARGET=$(curl -s http://localhost:4040/api/tunnels | jq -r '.tunnels[] | select(.name == "app") | .public_url')
         if [ -z "$ZAP_TARGET" ]; then
