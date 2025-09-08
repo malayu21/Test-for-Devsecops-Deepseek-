@@ -32,9 +32,12 @@ jobs:
           echo "Checking rate limit..."
           curl -s -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github.v3+json" \
             https://api.github.com/rate_limit | jq .
-          echo "Checking available artifacts..."
+          echo "Checking available artifacts for run ${{ github.event.workflow_run.id }}..."
           curl -s -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github.v3+json" \
             https://api.github.com/repos/malayu21/Test-for-Devsecops/actions/runs/${{ github.event.workflow_run.id }}/artifacts | jq .
+          echo "Workflow run details..."
+          curl -s -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/malayu21/Test-for-Devsecops/actions/runs/${{ github.event.workflow_run.id }} | jq .
 
       - name: Download security results
         uses: actions/download-artifact@v4
@@ -42,10 +45,22 @@ jobs:
           name: security-results
           path: ./security-results/
           run-id: ${{ github.event.workflow_run.id }}
-        continue-on-error: false
+        continue-on-error: true
+
+      - name: Retry download security results
+        if: steps.download-artifact.outputs.exit_code != 0
+        run: |
+          echo "Retrying artifact download..."
+          sleep 10
+          curl -s -H "Authorization: Bearer ${{ secrets.PAT_TOKEN }}" -H "Accept: application/vnd.github.v3+json" \
+            -L https://api.github.com/repos/malayu21/Test-for-Devsecops/actions/artifacts/3954928626/zip -o security-results.zip
+          unzip -o security-results.zip -d ./security-results/ || { echo "Failed to unzip artifact"; exit 1; }
+          ls -l ./security-results/
 
       - name: Verify artifact
         run: |
+          echo "Checking security-results artifact..."
+          ls -l ./security-results/ || { echo "No files found in security-results directory"; exit 1; }
           if [ ! -f ./security-results/merged-results.json ]; then
             echo "Error: merged-results.json not found in security-results artifact"
             ls -l ./security-results/
@@ -62,7 +77,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y jq
+          sudo apt-get install -y jq unzip
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
