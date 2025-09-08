@@ -1,13 +1,12 @@
 import json
 import argparse
-import openai
 import os
-import requests
+from openai import OpenAI
 from tenacity import retry, stop_after_attempt, wait_fixed
 from tqdm import tqdm
 
 # Configure OpenAI API
-openai.api_key = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 def load_vulnerabilities(input_file):
     try:
@@ -29,7 +28,7 @@ def generate_fix(vulnerability):
     Provide a fix for this vulnerability in a web application context (e.g., HTML, Python, or server configuration).
     """
     try:
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-4o",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=500
