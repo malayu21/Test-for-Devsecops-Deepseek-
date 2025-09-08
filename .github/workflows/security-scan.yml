@@ -53,7 +53,7 @@ jobs:
         run: |
           echo "Running safety check..."
           if [ -s requirements.txt ]; then
-            safety check --json --output safety-results.json || { echo "Safety check failed"; exit 1; }
+            safety check --output json > safety-results.json || { echo "Safety check failed"; exit 1; }
           else
             echo "No requirements.txt found, creating empty safety-results.json"
             echo '{"vulnerabilities": []}' > safety-results.json
