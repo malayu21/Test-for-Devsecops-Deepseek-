@@ -42,7 +42,7 @@ jobs:
       - name: Wait for artifact availability
         run: |
           echo "Waiting for artifact to be available..."
-          sleep 35
+          sleep 30
 
       - name: Download security results
         id: download-artifact
