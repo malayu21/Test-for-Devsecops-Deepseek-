@@ -1,6 +1,6 @@
 import json
 import argparse
-import openai
+from openai import OpenAI
 import os
 import requests
 from tenacity import retry, stop_after_attempt, wait_fixed
