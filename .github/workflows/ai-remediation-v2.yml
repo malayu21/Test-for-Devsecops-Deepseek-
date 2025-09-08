@@ -1,5 +1,4 @@
 name: Artificial Intelligence Security Remediation
-
 on:
   workflow_dispatch:
 
