@@ -117,14 +117,10 @@ jobs:
           echo "vulns_found=false" >> $GITHUB_OUTPUT
         fi
     - name: Trigger AI Remediation
-      if: steps.check-vulns.outputs.vulns_found == 'true'
-      uses: actions/github-script@v6
-      with:
-        github-token: ${{ secrets.PAT_TOKEN }}
-        script: |
-          github.rest.actions.createWorkflowDispatch({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            workflow_id: 'ai-remediation.yml',
-            ref: context.ref
-          })
+       trigger-ai-remediation:
+        needs: security-scan
+        if: needs.security-scan.outputs.vulns_found == 'true'
+        uses: ./.github/workflows/ai-remediation.yml
+        with: {}
+        secrets: inherit
+
