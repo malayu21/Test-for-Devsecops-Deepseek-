@@ -2,7 +2,7 @@ name: AI Security Remediation
 
 on:
   workflow_dispatch:
-  workflow_call:   # <-- fixed from "workflow call"
+  workflow_call:  
 
 permissions:
   contents: write
