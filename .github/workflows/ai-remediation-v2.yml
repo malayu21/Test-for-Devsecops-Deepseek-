@@ -1,4 +1,4 @@
-name: Artificial Intelligence Security Remediation.
+name: Artificial Intelligence Security Remediation
 
 on:
   workflow_dispatch:
