@@ -1,0 +1,8 @@
+{
+  "sast": [],
+  "dependencies": [],
+  "dast": [],
+  "summary": {
+    "total_vulnerabilities": 0
+  }
+}
