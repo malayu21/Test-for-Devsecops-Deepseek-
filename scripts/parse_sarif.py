@@ -29,8 +29,12 @@ def parse_codeql_results():
 
 def parse_safety_results():
     results = []
+    safety_file = 'safety-results.json'
+    if not os.path.exists(safety_file):
+        logger.warning(f"No Safety report file found: {safety_file}, returning empty results")
+        return results
     try:
-        with open('safety-results.json', 'r') as f:
+        with open(safety_file, 'r') as f:
             safety_data = json.load(f)
         for issue in safety_data.get('vulnerabilities', []):
             vuln = {
@@ -71,11 +75,17 @@ def main():
     all_vulns = {
         'sast': parse_codeql_results(),
         'dependencies': parse_safety_results(),
-        'dast': parse_zap_results()
+        'dast': parse_zap_results(),
+        'summary': {'total_vulnerabilities': 0}
     }
-    with open('merged-results.json', 'w') as f:
+    all_vulns['summary']['total_vulnerabilities'] = (
+        len(all_vulns['sast']) + len(all_vulns['dependencies']) + len(all_vulns['dast'])
+    )
+    os.makedirs('security-results', exist_ok=True)
+    output_file = 'security-results/merged-results.json'
+    with open(output_file, 'w') as f:
         json.dump(all_vulns, f, indent=2)
-    logger.info("Merged security results into merged-results.json")
+    logger.info(f"Merged security results into {output_file}")
 
 if __name__ == "__main__":
     main()
