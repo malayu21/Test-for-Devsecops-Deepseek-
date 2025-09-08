@@ -2,8 +2,6 @@ name: AI Security Remediation
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main, develop]
 
 permissions:
   contents: write
