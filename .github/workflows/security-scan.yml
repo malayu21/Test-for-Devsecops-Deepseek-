@@ -16,6 +16,8 @@ jobs:
       security-events: write
       actions: read
       contents: read
+    outputs:
+      vulns_found: ${{ steps.check-vulns.outputs.vulns_found }}
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -29,25 +31,30 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         pip install safety
+
     - name: Setup Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
+
     - name: Run CodeQL Analysis
       uses: github/codeql-action/init@v3
       with:
         languages: python
+
     - name: Autobuild
       uses: github/codeql-action/autobuild@v3
+
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v3
       with:
         output: sarif-results
         upload: false
+
     - name: Run Safety check
       run: |
-        run: |
         safety check --json --output safety-results.json || true
+
     - name: Install ngrok
       run: |
         curl -s -o ngrok.tar.gz https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tar.gz
@@ -55,9 +62,11 @@ jobs:
         sudo mv ngrok /usr/local/bin/ngrok
         rm ngrok.tar.gz
         ngrok version || { echo "ngrok installation failed"; exit 1; }
+
     - name: Configure ngrok authtoken
       run: |
         ngrok authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
+
     - name: Create ngrok configuration
       run: |
         cat > ngrok.yml <<EOF
@@ -68,6 +77,7 @@ jobs:
             proto: http
             addr: 5000
         EOF
+
     - name: Start local server for DAST
       run: |
         cd src
@@ -81,15 +91,18 @@ jobs:
           exit 1
         fi
         echo "ZAP_TARGET=$ZAP_TARGET" >> $GITHUB_ENV
+
     - name: Run OWASP ZAP Scan
       run: |
         touch report_json.json report_md.md report_html.html
         chmod a+w report_json.json report_md.md report_html.html
         docker run -v $(pwd):/zap/wrk/:rw --network=host -t ghcr.io/zaproxy/zaproxy:stable \
           zap-full-scan.py -t ${{ env.ZAP_TARGET }} -J report_json.json -w report_md.md -r report_html.html -a -j -m 2 -T 5 -I || true
+
     - name: Verify ZAP report files
       run: |
         ls -l report_json.json report_md.md report_html.html || { echo "ZAP report files missing"; exit 1; }
+
     - name: Upload ZAP reports
       uses: actions/upload-artifact@v4
       with:
@@ -98,9 +111,11 @@ jobs:
           report_json.json
           report_md.md
           report_html.html
+
     - name: Merge security results
       run: |
         python scripts/parse_sarif.py
+
     - name: Upload security results
       uses: actions/upload-artifact@v4
       with:
@@ -108,6 +123,7 @@ jobs:
         path: |
           merged-results.json
           sarif-results/
+
     - name: Check for vulnerabilities
       id: check-vulns
       run: |
@@ -117,10 +133,8 @@ jobs:
           echo "vulns_found=false" >> $GITHUB_OUTPUT
         fi
 
-  Trigger-AI-Remediation:
-        needs: security-scan
-        if: needs.security-scan.outputs.vulns_found == 'true'
-        uses: ./.github/workflows/ai-remediation.yml
-        with: {}
-        secrets: inherit
-
+  trigger-ai-remediation:
+    needs: security-scan
+    if: needs.security-scan.outputs.vulns_found == 'true'
+    uses: ./.github/workflows/ai-remediation.yml
+    secrets: inherit
