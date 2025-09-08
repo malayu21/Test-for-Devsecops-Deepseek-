@@ -110,6 +110,13 @@ jobs:
             report_md.md
             report_html.html
 
+      - name: Verify merge inputs
+        run: |
+          echo "Checking input files for parse_sarif.py..."
+          ls -l sarif-results/python.sarif || { echo "CodeQL SARIF file missing"; exit 1; }
+          ls -l report_json.json || { echo "ZAP JSON report missing"; exit 1; }
+          ls -l safety-results.json || { echo "Safety JSON report missing"; exit 1; }
+
       - name: Merge security results
         run: |
           mkdir -p security-results
@@ -118,6 +125,8 @@ jobs:
             --zap report_json.json \
             --safety safety-results.json \
             --output security-results/merged-results.json || { echo "Failed to merge security results"; exit 1; }
+          ls -l security-results/merged-results.json || { echo "Merged results file not created"; exit 1; }
+          cat security-results/merged-results.json
 
       - name: Upload security results
         uses: actions/upload-artifact@v4
