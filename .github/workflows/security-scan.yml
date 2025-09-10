@@ -47,7 +47,7 @@ jobs:
         uses: github/codeql-action/analyze@v3
         with:
           output: sarif-results
-          upload: true
+          upload: false
           
       - name: Install dependencies
         run: pip install -r requirements.txt
