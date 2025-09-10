@@ -1,10 +1,3 @@
-"""
-apply_fixes.py - Apply AI-generated security fixes to code
-
-This script takes the fixes.json from ai_remediation.py and actually modifies
-your code files to implement the security fixes.
-"""
-
 import json
 import os
 import re
