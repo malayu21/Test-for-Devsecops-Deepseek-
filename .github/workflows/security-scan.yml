@@ -38,7 +38,7 @@ jobs:
       - name: Run CodeQL Analysis
         uses: github/codeql-action/init@v3
         with:
-          languages: python
+          languages: python, javascript
 
       - name: Autobuild
         uses: github/codeql-action/autobuild@v3
