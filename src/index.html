@@ -1,58 +1,119 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Vulnerable Calculator</title>
-  <link rel="stylesheet" href="style.css" />
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device width, initial scale=1.0">
+    <title>☀️🌧W E A T H E R I A🌩❄️</title>
+    <link rel="stylesheet" href="weatheria.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
 </head>
 <body>
-  <h1>Calculator + XSS Demo</h1>
 
-  <!-- Reflected XSS via "name" parameter (CWE‑79) -->
-  <form method="GET">
-    <input name="name" placeholder="Enter your name" />
-    <button type="submit">Say Hello</button>
-  </form>
-  <div id="greeting"></div>
+    <div class="container">
+        <div class="headerlogo">
+            <a href="https://bulbapedia.bulbagarden.net/wiki/Castform_(Pok%C3%A9mon)"><img src="castform.gif" alt="Castform" class="logoimage"></a>
+            <h1 id="header-title" class="highlight">☀️🌧W E A T H E R I A🌩❄️</h1>
+        </div>
 
-  <!-- CSRF demonstration (CWE‑352) -->
-  <form action="/transfer" method="POST">
-    <button type="submit" name="amount" value="100">Transfer ₱100</button>
-  </form>
+        <div class="darkmodetoggle">
+            <button id="darkmodebutton"> 🌝 Dark Mode </button>
+        </div>
 
-  <div class="calculator">
-    <input id="display" disabled />
-    <div class="keys">
-      <!-- calculator buttons -->
-      <button value="7">7</button>
-      <button value="8">8</button>
-      <button value="9">9</button>
-      <button value="/">÷</button>
-      <button value="4">4</button>
-      <button value="5">5</button>
-      <button value="6">6</button>
-      <button value="*">×</button>
-      <button value="1">1</button>
-      <button value="2">2</button>
-      <button value="3">3</button>
-      <button value="-">−</button>
-      <button value="0">0</button>
-      <button value=".">.</button>
-      <button id="equals" value="=">=</button>
-      <button value="+">+</button>
-      <button id="clear">C</button>
+        <!--Pang Current, Daily Toolbars -->
+        <div class="toolbar">
+            <button id="currentbutton" class="toolbarbuttons active">Current</button>
+            <button id="dailybutton" class="toolbarbuttons">Daily</button>
+            <button id="weathermap" class="toolbarbuttons">Weather Map</button>
+        </div>
+
+        <div class="formcontainer">
+            <form id="weatherform">
+                <input type="text" id="city" placeholder="Enter the city's name" required>
+                <button type="submit" id = "submit">Get Weather</button>
+            </form>
+        </div>
+
+        <!-- Para sa Weather Response ni API -->
+        <div id="weatherinfo" class="weatherinfo hidden">
+            <div id="currentsection" class="section">
+                <h2 id="weathercity"></h2>
+                <p id="weatherregion"></p>
+                <p id="weathercountry"></p>
+                <p id="weatherdescription"></p>
+                <p id="weathertemp"></p>
+                <div id="weathericon"></div>
+                <div class="timeinfo">
+                    <h3 id="citytime"></h3>
+                    <h3 id="clienttime"></h3>
+                </div>
+            </div>
+
+            <div id="forecast" class="section hidden">
+                <h3>Forecast</h3>
+                <div id="forecast"></div>
+            </div>
+
+            <div id="dailysection" class="section hidden">
+                <h3>Daily Forecast</h3>
+                <div id="dailyforecast" class="forecastweek"></div>
+            </div>
+
+            <div id="mapSection" class="section hidden">
+              <h3>Weather Map</h3>
+              <p id="location-info"></p>
+              <p id="precipitation-info"></p>
+              <div id="map"></div>
+              <button id="toggle-precipitation">Precipitation</button>
+              <button id="toggle-temperature">Temperature</button>
+          </div>
+          
+        </div>
+
+        <div id="errormessage" class="errormessage hidden"></div>
+        
+<!-- About Us -->
+<button id="abouttogglebutton">About Us</button>
+<div id="aboutus" class="aboutus hidden">
+  <h2 id="abouttitle">Learn about us!</h2>
+  <div id="aboutcontent" class="aboutcontent">
+
+    <!-- Developers  -->
+    <div class="aboutsection" id="aboutdevelopers">
+      <button id="aboutdevs" class="aboutbutton" datasection="aboutdevelopers">Developers</button>
+      <div class="abouttext hidden">
+        <div class="imagecontainer"><img src="bernal.jpg" alt="Brian Joshua Bernal"></div>
+        <p>Future Engr. Brian Joshua Bernal</p>
+        <div class="imagecontainer"><img src="jevs.jpg" alt="Enricko Jevan Baluyot"></div>
+        <p>Future Engr. Enricko Jevan Baluyot</p>
+        <div class="imagecontainer"><img src="fred.jpg" alt="Danfred Ciervo"></div>
+        <p>Future Engr. Danfred Ciervo</p>
+        <div class="imagecontainer"><img src="mhelvs.jpg" alt="Mhelvin Hernandez"></div>
+        <p>Future Engr. Mhelvin Hernandez</p>
+        <div class="imagecontainer"><img src="ron.jpg" alt="Ronnel Vasallo"></div>
+        <p>Future Engr. Ronnel Vasallo</p>
+      </div>
+    </div>
+
+    <!-- Instructor -->
+    <div class="aboutsection" id="aboutinstructor">
+      <button id="aboutins" class="aboutbutton" datasection="aboutinstructor">Instructor</button>
+      <div class="abouttext hidden">
+        <div class="imagecontainer"><img src="maamshane.jpg" alt="Engr. Shane Anne Dela Cruz"></div>
+        <p>Engr. Shane Anne Dela Cruz</p>
+      </div>
+    </div>
+
+    <!-- About Weatheria -->
+    <div class="aboutsection" id="aboutweatheria">
+      <button id="aboutweatheria" class="aboutbutton" datasection="aboutweatheria">About ☀️🌧W E A T H E R I A🌩❄️</button>
+      <div class="abouttext hidden">
+        <p class="Finale">This is a project in SOFTWARE DESIGN and is a demonstration project for learning purposes, focusing on creating a web application to fetch and display weather data. This website provides current weather information based on the city you typed on the box. Enter a city name and get real-time weather updates.</p>
+      </div>
+    </div>
+
     </div>
   </div>
-
-  <script src="script.js"></script>
-  <script>
-    const greetingDiv = document.getElementById('greeting');
-    const params = new URLSearchParams(window.location.search);
-    const name = params.get('name');
-    if (name) {
-      // reflected XSS vulnerability
-      greetingDiv.innerHTML = `<div>Hello, ${name}!</div>`;
-    }
-  </script>
+  <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+  <script src="weatheria.js"></script>
 </body>
 </html>
