@@ -43,11 +43,11 @@ jobs:
       - name: Autobuild
         uses: github/codeql-action/autobuild@v3
 
-      - name: Perform CodeQL Analysis
+      - name: Perform SAST CodeQL Analysis
         uses: github/codeql-action/analyze@v3
         with:
           output: sarif-results
-          upload: false
+          upload: true
           
       - name: Install dependencies
         run: pip install -r requirements.txt
@@ -55,7 +55,7 @@ jobs:
       - name: Upgrade safety
         run: pip install --upgrade safety
 
-      - name: Run Safety check
+      - name: Run Dependency Scanning
         run: |
           echo "Running safety check..."
           if [ -s requirements.txt ]; then
@@ -106,7 +106,7 @@ jobs:
           fi
           echo "ZAP_TARGET=$ZAP_TARGET" >> $GITHUB_ENV
 
-      - name: Run OWASP ZAP Scan
+      - name: Run DAST OWASP ZAP Scan
         run: |
           touch report_json.json report_md.md report_html.html
           chmod a+w report_json.json report_md.md report_html.html
@@ -133,7 +133,7 @@ jobs:
           ls -l report_json.json || { echo "ZAP JSON report missing"; exit 1; }
           ls -l safety-results.json || { echo "Safety JSON report missing"; exit 1; }
 
-      - name: Merge security results
+      - name: Merge SAST, Dependencies Scan, DAST results
         run: |
           mkdir -p security-results
           python scripts/parse_sarif.py || { echo "Failed to merge security results"; exit 1; }
