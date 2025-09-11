@@ -12,7 +12,8 @@ on:
 jobs:
   security-scan:
     runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.ref ! '^ai-security-fixes-.*$'
+    if: github.event_name != 'pull_request' || github.event.
+        pull_request.head.ref !~ '^ai-security-fixes-.*$'
     permissions:
       security-events: write
       actions: read
