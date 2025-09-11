@@ -1,10 +1,10 @@
 import json
 import os
 
-def parse_codeql_sarif(sarif_file):
+def parse_codeql_sarif(sarif_file, language):
     """Parse CodeQL SARIF file for SAST vulnerabilities."""
     try:
-        with open(sarif_file, 'r') as f:
+        with open(sarif_file, 'r', encoding='utf-8') as f:
             sarif = json.load(f)
         results = sarif.get('runs', [{}])[0].get('results', [])
         vulnerabilities = []
@@ -17,16 +17,18 @@ def parse_codeql_sarif(sarif_file):
                     'file': loc.get('physicalLocation', {}).get('artifactLocation', {}).get('uri', ''),
                     'line': loc.get('physicalLocation', {}).get('region', {}).get('startLine', 0)
                 } for loc in result.get('locations', [])
+                if loc.get('physicalLocation', {}).get('artifactLocation', {}).get('uri', '').startswith('src/')
             ]
-            vulnerabilities.append({
-                'rule_id': f"codeql-{rule_id}",
-                'message': message,
-                'severity': severity,
-                'locations': locations
-            })
+            if locations:  # Only include vulnerabilities in src/
+                vulnerabilities.append({
+                    'rule_id': f"codeql-{language}-{rule_id}",
+                    'message': message,
+                    'severity': severity,
+                    'locations': locations
+                })
         return vulnerabilities
     except Exception as e:
-        print(f"Error parsing CodeQL SARIF: {e}")
+        print(f"Error parsing {language} SARIF {sarif_file}: {e}")
         return []
 
 def parse_safety_results(safety_file):
@@ -54,13 +56,18 @@ def parse_zap_results(zap_file):
         with open(zap_file, 'r') as f:
             zap = json.load(f)
         vulnerabilities = []
+        app_url = os.getenv('ZAP_TARGET', 'https://75f09d80f429.ngrok-free.app')
         for site in zap.get('site', []):
+            site_url = site.get('@name', '')
+            if app_url not in site_url:
+                print(f"Skipping external URL: {site_url}")
+                continue
             for alert in site.get('alerts', []):
                 rule_id = alert.get('alertRef', 'unknown')
                 severity = alert.get('riskdesc', 'Informational').split(' ')[0].capitalize()
                 vulnerabilities.append({
                     'rule_id': f"zap-{rule_id}",
-                    'url': site.get('@name', ''),
+                    'url': site_url,
                     'method': alert.get('method', 'GET'),
                     'message': alert.get('alert', 'No description'),
                     'evidence': alert.get('evidence', ''),
@@ -74,11 +81,17 @@ def parse_zap_results(zap_file):
 
 def main():
     """Merge security results from CodeQL, Safety, and ZAP."""
-    codeql_file = 'sarif-results/python.sarif'
+    codeql_python_file = 'sarif-results/python.sarif'
+    codeql_javascript_file = 'sarif-results/javascript.sarif'
     safety_file = 'safety-results.json'
     zap_file = 'report_json.json'
     
-    sast_vulns = parse_codeql_sarif(codeql_file) if os.path.exists(codeql_file) else []
+    sast_vulns = []
+    if os.path.exists(codeql_python_file):
+        sast_vulns.extend(parse_codeql_sarif(codeql_python_file, 'python'))
+    if os.path.exists(codeql_javascript_file):
+        sast_vulns.extend(parse_codeql_sarif(codeql_javascript_file, 'javascript'))
+    
     dep_vulns = parse_safety_results(safety_file) if os.path.exists(safety_file) else []
     dast_vulns = parse_zap_results(zap_file) if os.path.exists(zap_file) else []
     
@@ -97,6 +110,8 @@ def main():
         json.dump(merged_results, f, indent=2)
     
     print(f"Merged results saved to {output_file}")
+    print(f"Total vulnerabilities: {merged_results['summary']['total_vulnerabilities']}")
+    print(f"SAST: {len(sast_vulns)}, Dependencies: {len(dep_vulns)}, DAST: {len(dast_vulns)}")
 
 if __name__ == "__main__":
     main()
