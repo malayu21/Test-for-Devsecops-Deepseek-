@@ -39,6 +39,8 @@ jobs:
         uses: github/codeql-action/init@v3
         with:
           languages: python, javascript
+          config-file: .github/codeql/codeql-config.yml
+          debug: true
 
       - name: Autobuild
         uses: github/codeql-action/autobuild@v3
