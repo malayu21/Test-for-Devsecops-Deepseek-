@@ -276,7 +276,7 @@ Respond in JSON:
         if total_vulns == 0:
             print("No vulnerabilities to process. Skipping AI remediation.")
             with open('fixes-summary.txt', 'w') as f:
-                f.write("No vulnerabilities found to fix.\n")
+                f.write("Nothing to fix.\n")
             return []
         
         processed = 0
