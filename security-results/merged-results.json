@@ -1,0 +1,414 @@
+{
+  "sast": [],
+  "dependencies": [],
+  "dast": [
+    {
+      "rule_id": "zap-10098",
+      "url": "https://cdn.ngrok.com",
+      "method": "GET",
+      "message": "Cross-Domain Misconfiguration",
+      "evidence": "",
+      "solution": "<p>Ensure that sensitive data is not available in an unauthenticated manner (using IP address white-listing, for instance).</p><p>Configure the \"Access-Control-Allow-Origin\" HTTP header to a more restrictive set of domains, or remove all CORS headers entirely, to allow the web browser to enforce the Same Origin Policy (SOP) in a more restrictive manner.</p>",
+      "severity": "Medium"
+    },
+    {
+      "rule_id": "zap-10063-1",
+      "url": "https://cdn.ngrok.com",
+      "method": "GET",
+      "message": "Permissions Policy Header Not Set",
+      "evidence": "",
+      "solution": "<p>Ensure that your web server, application server, load balancer, etc. is configured to set the Permissions-Policy header.</p>",
+      "severity": "Low"
+    },
+    {
+      "rule_id": "zap-10035-1",
+      "url": "https://cdn.ngrok.com",
+      "method": "GET",
+      "message": "Strict-Transport-Security Header Not Set",
+      "evidence": "",
+      "solution": "<p>Ensure that your web server, application server, load balancer, etc. is configured to enforce Strict-Transport-Security.</p>",
+      "severity": "Low"
+    },
+    {
+      "rule_id": "zap-10021",
+      "url": "https://cdn.ngrok.com",
+      "method": "GET",
+      "message": "X-Content-Type-Options Header Missing",
+      "evidence": "",
+      "solution": "<p>Ensure that the application/web server sets the Content-Type header appropriately, and that it sets the X-Content-Type-Options header to 'nosniff' for all web pages.</p><p>If possible, ensure that the end user uses a standards-compliant and modern web browser that does not perform MIME-sniffing at all, or that can be directed by the web application/web server to not perform MIME-sniffing.</p>",
+      "severity": "Low"
+    },
+    {
+      "rule_id": "zap-10027",
+      "url": "https://cdn.ngrok.com",
+      "method": "GET",
+      "message": "Information Disclosure - Suspicious Comments",
+      "evidence": "",
+      "solution": "<p>Remove all comments that return information that may help an attacker and fix any underlying problems they refer to.</p>",
+      "severity": "Informational"
+    },
+    {
+      "rule_id": "zap-10049",
+      "url": "https://cdn.ngrok.com",
+      "method": "GET",
+      "message": "Storable and Cacheable Content",
+      "evidence": "",
+      "solution": "<p>Validate that the response does not contain sensitive, personal or user-specific information. If it does, consider the use of the following HTTP response headers, to limit, or prevent the content being stored and retrieved from the cache by another user:</p><p>Cache-Control: no-cache, no-store, must-revalidate, private</p><p>Pragma: no-cache</p><p>Expires: 0</p><p>This configuration directs both HTTP 1.0 and HTTP 1.1 compliant caching servers to not store the response, and to not retrieve the response (without validation) from the cache, in response to a similar request.</p>",
+      "severity": "Informational"
+    },
+    {
+      "rule_id": "zap-10098",
+      "url": "https://cdn.ngrok.com",
+      "method": "GET",
+      "message": "Cross-Domain Misconfiguration",
+      "evidence": "",
+      "solution": "<p>Ensure that sensitive data is not available in an unauthenticated manner (using IP address white-listing, for instance).</p><p>Configure the \"Access-Control-Allow-Origin\" HTTP header to a more restrictive set of domains, or remove all CORS headers entirely, to allow the web browser to enforce the Same Origin Policy (SOP) in a more restrictive manner.</p>",
+      "severity": "Medium"
+    },
+    {
+      "rule_id": "zap-10063-1",
+      "url": "https://cdn.ngrok.com",
+      "method": "GET",
+      "message": "Permissions Policy Header Not Set",
+      "evidence": "",
+      "solution": "<p>Ensure that your web server, application server, load balancer, etc. is configured to set the Permissions-Policy header.</p>",
+      "severity": "Low"
+    },
+    {
+      "rule_id": "zap-10035-1",
+      "url": "https://cdn.ngrok.com",
+      "method": "GET",
+      "message": "Strict-Transport-Security Header Not Set",
+      "evidence": "",
+      "solution": "<p>Ensure that your web server, application server, load balancer, etc. is configured to enforce Strict-Transport-Security.</p>",
+      "severity": "Low"
+    },
+    {
+      "rule_id": "zap-10021",
+      "url": "https://cdn.ngrok.com",
+      "method": "GET",
+      "message": "X-Content-Type-Options Header Missing",
+      "evidence": "",
+      "solution": "<p>Ensure that the application/web server sets the Content-Type header appropriately, and that it sets the X-Content-Type-Options header to 'nosniff' for all web pages.</p><p>If possible, ensure that the end user uses a standards-compliant and modern web browser that does not perform MIME-sniffing at all, or that can be directed by the web application/web server to not perform MIME-sniffing.</p>",
+      "severity": "Low"
+    },
+    {
+      "rule_id": "zap-10027",
+      "url": "https://cdn.ngrok.com",
+      "method": "GET",
+      "message": "Information Disclosure - Suspicious Comments",
+      "evidence": "",
+      "solution": "<p>Remove all comments that return information that may help an attacker and fix any underlying problems they refer to.</p>",
+      "severity": "Informational"
+    },
+    {
+      "rule_id": "zap-10049",
+      "url": "https://cdn.ngrok.com",
+      "method": "GET",
+      "message": "Storable and Cacheable Content",
+      "evidence": "",
+      "solution": "<p>Validate that the response does not contain sensitive, personal or user-specific information. If it does, consider the use of the following HTTP response headers, to limit, or prevent the content being stored and retrieved from the cache by another user:</p><p>Cache-Control: no-cache, no-store, must-revalidate, private</p><p>Pragma: no-cache</p><p>Expires: 0</p><p>This configuration directs both HTTP 1.0 and HTTP 1.1 compliant caching servers to not store the response, and to not retrieve the response (without validation) from the cache, in response to a similar request.</p>",
+      "severity": "Informational"
+    },
+    {
+      "rule_id": "zap-90004-1",
+      "url": "https://tracking-protection.cdn.mozilla.net",
+      "method": "GET",
+      "message": "Insufficient Site Isolation Against Spectre Vulnerability",
+      "evidence": "",
+      "solution": "<p>Ensure that the application/web server sets the Cross-Origin-Resource-Policy header appropriately, and that it sets the Cross-Origin-Resource-Policy header to 'same-origin' for all web pages.</p><p>'same-site' is considered as less secured and should be avoided.</p><p>If resources must be shared, set the header to 'cross-origin'.</p><p>If possible, ensure that the end user uses a standards-compliant and modern web browser that supports the Cross-Origin-Resource-Policy header (https://caniuse.com/mdn-http_headers_cross-origin-resource-policy).</p>",
+      "severity": "Low"
+    },
+    {
+      "rule_id": "zap-10036",
+      "url": "https://tracking-protection.cdn.mozilla.net",
+      "method": "GET",
+      "message": "Server Leaks Version Information via \"Server\" HTTP Response Header Field",
+      "evidence": "",
+      "solution": "<p>Ensure that your web server, application server, load balancer, etc. is configured to suppress the \"Server\" header or provide generic details.</p>",
+      "severity": "Low"
+    },
+    {
+      "rule_id": "zap-10035-1",
+      "url": "https://tracking-protection.cdn.mozilla.net",
+      "method": "GET",
+      "message": "Strict-Transport-Security Header Not Set",
+      "evidence": "",
+      "solution": "<p>Ensure that your web server, application server, load balancer, etc. is configured to enforce Strict-Transport-Security.</p>",
+      "severity": "Low"
+    },
+    {
+      "rule_id": "zap-10096",
+      "url": "https://tracking-protection.cdn.mozilla.net",
+      "method": "GET",
+      "message": "Timestamp Disclosure - Unix",
+      "evidence": "",
+      "solution": "<p>Manually confirm that the timestamp data is not sensitive, and that the data cannot be aggregated to disclose exploitable patterns.</p>",
+      "severity": "Low"
+    },
+    {
+      "rule_id": "zap-10021",
+      "url": "https://tracking-protection.cdn.mozilla.net",
+      "method": "GET",
+      "message": "X-Content-Type-Options Header Missing",
+      "evidence": "",
+      "solution": "<p>Ensure that the application/web server sets the Content-Type header appropriately, and that it sets the X-Content-Type-Options header to 'nosniff' for all web pages.</p><p>If possible, ensure that the end user uses a standards-compliant and modern web browser that does not perform MIME-sniffing at all, or that can be directed by the web application/web server to not perform MIME-sniffing.</p>",
+      "severity": "Low"
+    },
+    {
+      "rule_id": "zap-10094-3",
+      "url": "https://tracking-protection.cdn.mozilla.net",
+      "method": "GET",
+      "message": "Base64 Disclosure",
+      "evidence": "",
+      "solution": "<p>Manually confirm that the Base64 data does not leak sensitive information, and that the data cannot be aggregated/used to exploit other vulnerabilities.</p>",
+      "severity": "Informational"
+    },
+    {
+      "rule_id": "zap-10050-2",
+      "url": "https://tracking-protection.cdn.mozilla.net",
+      "method": "GET",
+      "message": "Retrieved from Cache",
+      "evidence": "",
+      "solution": "<p>Validate that the response does not contain sensitive, personal or user-specific information. If it does, consider the use of the following HTTP response headers, to limit, or prevent the content being stored and retrieved from the cache by another user:</p><p>Cache-Control: no-cache, no-store, must-revalidate, private</p><p>Pragma: no-cache</p><p>Expires: 0</p><p>This configuration directs both HTTP 1.0 and HTTP 1.1 compliant caching servers to not store the response, and to not retrieve the response (without validation) from the cache, in response to a similar request.</p>",
+      "severity": "Informational"
+    },
+    {
+      "rule_id": "zap-10049",
+      "url": "https://tracking-protection.cdn.mozilla.net",
+      "method": "GET",
+      "message": "Storable and Cacheable Content",
+      "evidence": "",
+      "solution": "<p>Validate that the response does not contain sensitive, personal or user-specific information. If it does, consider the use of the following HTTP response headers, to limit, or prevent the content being stored and retrieved from the cache by another user:</p><p>Cache-Control: no-cache, no-store, must-revalidate, private</p><p>Pragma: no-cache</p><p>Expires: 0</p><p>This configuration directs both HTTP 1.0 and HTTP 1.1 compliant caching servers to not store the response, and to not retrieve the response (without validation) from the cache, in response to a similar request.</p>",
+      "severity": "Informational"
+    },
+    {
+      "rule_id": "zap-40038",
+      "url": "https://f0f9769d1e81.ngrok-free.app",
+      "method": "GET",
+      "message": "Bypassing 403",
+      "evidence": "",
+      "solution": "",
+      "severity": "Medium"
+    },
+    {
+      "rule_id": "zap-40040",
+      "url": "https://f0f9769d1e81.ngrok-free.app",
+      "method": "GET",
+      "message": "CORS Misconfiguration",
+      "evidence": "",
+      "solution": "<p>If a web resource contains sensitive information, the origin should be properly specified in the Access-Control-Allow-Origin header. Only trusted websites needing this resource should be specified in this header, with the most secured protocol supported.</p>",
+      "severity": "Medium"
+    },
+    {
+      "rule_id": "zap-10055-13",
+      "url": "https://f0f9769d1e81.ngrok-free.app",
+      "method": "GET",
+      "message": "CSP: Failure to Define Directive with No Fallback",
+      "evidence": "",
+      "solution": "<p>Ensure that your web server, application server, load balancer, etc. is properly configured to set the Content-Security-Policy header.</p>",
+      "severity": "Medium"
+    },
+    {
+      "rule_id": "zap-10055-5",
+      "url": "https://f0f9769d1e81.ngrok-free.app",
+      "method": "GET",
+      "message": "CSP: script-src unsafe-inline",
+      "evidence": "",
+      "solution": "<p>Ensure that your web server, application server, load balancer, etc. is properly configured to set the Content-Security-Policy header.</p>",
+      "severity": "Medium"
+    },
+    {
+      "rule_id": "zap-10055-6",
+      "url": "https://f0f9769d1e81.ngrok-free.app",
+      "method": "GET",
+      "message": "CSP: style-src unsafe-inline",
+      "evidence": "",
+      "solution": "<p>Ensure that your web server, application server, load balancer, etc. is properly configured to set the Content-Security-Policy header.</p>",
+      "severity": "Medium"
+    },
+    {
+      "rule_id": "zap-10038-1",
+      "url": "https://f0f9769d1e81.ngrok-free.app",
+      "method": "GET",
+      "message": "Content Security Policy (CSP) Header Not Set",
+      "evidence": "",
+      "solution": "<p>Ensure that your web server, application server, load balancer, etc. is configured to set the Content-Security-Policy header.</p>",
+      "severity": "Medium"
+    },
+    {
+      "rule_id": "zap-10098",
+      "url": "https://f0f9769d1e81.ngrok-free.app",
+      "method": "GET",
+      "message": "Cross-Domain Misconfiguration",
+      "evidence": "",
+      "solution": "<p>Ensure that sensitive data is not available in an unauthenticated manner (using IP address white-listing, for instance).</p><p>Configure the \"Access-Control-Allow-Origin\" HTTP header to a more restrictive set of domains, or remove all CORS headers entirely, to allow the web browser to enforce the Same Origin Policy (SOP) in a more restrictive manner.</p>",
+      "severity": "Medium"
+    },
+    {
+      "rule_id": "zap-40035",
+      "url": "https://f0f9769d1e81.ngrok-free.app",
+      "method": "GET",
+      "message": "Hidden File Found",
+      "evidence": "",
+      "solution": "<p>Consider whether or not the component is actually required in production, if it isn't then disable it. If it is then ensure access to it requires appropriate authentication and authorization, or limit exposure to internal systems or specific source IPs, etc.</p>",
+      "severity": "Medium"
+    },
+    {
+      "rule_id": "zap-10020-1",
+      "url": "https://f0f9769d1e81.ngrok-free.app",
+      "method": "GET",
+      "message": "Missing Anti-clickjacking Header",
+      "evidence": "",
+      "solution": "<p>Modern Web browsers support the Content-Security-Policy and X-Frame-Options HTTP headers. Ensure one of them is set on all web pages returned by your site/app.</p><p>If you expect the page to be framed only by pages on your server (e.g. it's part of a FRAMESET) then you'll want to use SAMEORIGIN, otherwise if you never expect the page to be framed, you should use DENY. Alternatively consider implementing Content Security Policy's \"frame-ancestors\" directive.</p>",
+      "severity": "Medium"
+    },
+    {
+      "rule_id": "zap-40025",
+      "url": "https://f0f9769d1e81.ngrok-free.app",
+      "method": "GET",
+      "message": "Proxy Disclosure",
+      "evidence": "",
+      "solution": "<p>Disable the 'TRACE' method on the proxy servers, as well as the origin web/application server.</p><p>Disable the 'OPTIONS' method on the proxy servers, as well as the origin web/application server, if it is not required for other purposes, such as 'CORS' (Cross Origin Resource Sharing).</p><p>Configure the web and application servers with custom error pages, to prevent 'fingerprintable' product-specific error pages being leaked to the user in the event of HTTP errors, such as 'TRACK' requests for non-existent pages.</p><p>Configure all proxies, application servers, and web servers to prevent disclosure of the technology and version information in the 'Server' and 'X-Powered-By' HTTP response headers.</p><p></p>",
+      "severity": "Medium"
+    },
+    {
+      "rule_id": "zap-90003",
+      "url": "https://f0f9769d1e81.ngrok-free.app",
+      "method": "GET",
+      "message": "Sub Resource Integrity Attribute Missing",
+      "evidence": "",
+      "solution": "<p>Provide a valid integrity attribute to the tag.</p>",
+      "severity": "Medium"
+    },
+    {
+      "rule_id": "zap-10017",
+      "url": "https://f0f9769d1e81.ngrok-free.app",
+      "method": "GET",
+      "message": "Cross-Domain JavaScript Source File Inclusion",
+      "evidence": "",
+      "solution": "<p>Ensure JavaScript source files are loaded from only trusted sources, and the sources can't be controlled by end users of the application.</p>",
+      "severity": "Low"
+    },
+    {
+      "rule_id": "zap-90004-2",
+      "url": "https://f0f9769d1e81.ngrok-free.app",
+      "method": "GET",
+      "message": "Insufficient Site Isolation Against Spectre Vulnerability",
+      "evidence": "",
+      "solution": "<p>Ensure that the application/web server sets the Cross-Origin-Embedder-Policy header appropriately, and that it sets the Cross-Origin-Embedder-Policy header to 'require-corp' for documents.</p><p>If possible, ensure that the end user uses a standards-compliant and modern web browser that supports the Cross-Origin-Embedder-Policy header (https://caniuse.com/mdn-http_headers_cross-origin-embedder-policy).</p>",
+      "severity": "Low"
+    },
+    {
+      "rule_id": "zap-10063-1",
+      "url": "https://f0f9769d1e81.ngrok-free.app",
+      "method": "GET",
+      "message": "Permissions Policy Header Not Set",
+      "evidence": "",
+      "solution": "<p>Ensure that your web server, application server, load balancer, etc. is configured to set the Permissions-Policy header.</p>",
+      "severity": "Low"
+    },
+    {
+      "rule_id": "zap-10035-1",
+      "url": "https://f0f9769d1e81.ngrok-free.app",
+      "method": "GET",
+      "message": "Strict-Transport-Security Header Not Set",
+      "evidence": "",
+      "solution": "<p>Ensure that your web server, application server, load balancer, etc. is configured to enforce Strict-Transport-Security.</p>",
+      "severity": "Low"
+    },
+    {
+      "rule_id": "zap-10094-3",
+      "url": "https://f0f9769d1e81.ngrok-free.app",
+      "method": "GET",
+      "message": "Base64 Disclosure",
+      "evidence": "",
+      "solution": "<p>Manually confirm that the Base64 data does not leak sensitive information, and that the data cannot be aggregated/used to exploit other vulnerabilities.</p>",
+      "severity": "Informational"
+    },
+    {
+      "rule_id": "zap-10109",
+      "url": "https://f0f9769d1e81.ngrok-free.app",
+      "method": "GET",
+      "message": "Modern Web Application",
+      "evidence": "",
+      "solution": "<p>This is an informational alert and so no changes are required.</p>",
+      "severity": "Informational"
+    },
+    {
+      "rule_id": "zap-10049",
+      "url": "https://f0f9769d1e81.ngrok-free.app",
+      "method": "GET",
+      "message": "Non-Storable Content",
+      "evidence": "",
+      "solution": "<p>The content may be marked as storable by ensuring that the following conditions are satisfied:</p><p>The request method must be understood by the cache and defined as being cacheable (\"GET\", \"HEAD\", and \"POST\" are currently defined as cacheable)</p><p>The response status code must be understood by the cache (one of the 1XX, 2XX, 3XX, 4XX, or 5XX response classes are generally understood)</p><p>The \"no-store\" cache directive must not appear in the request or response header fields</p><p>For caching by \"shared\" caches such as \"proxy\" caches, the \"private\" response directive must not appear in the response</p><p>For caching by \"shared\" caches such as \"proxy\" caches, the \"Authorization\" header field must not appear in the request, unless the response explicitly allows it (using one of the \"must-revalidate\", \"public\", or \"s-maxage\" Cache-Control response directives)</p><p>In addition to the conditions above, at least one of the following conditions must also be satisfied by the response:</p><p>It must contain an \"Expires\" header field</p><p>It must contain a \"max-age\" response directive</p><p>For \"shared\" caches such as \"proxy\" caches, it must contain a \"s-maxage\" response directive</p><p>It must contain a \"Cache Control Extension\" that allows it to be cached</p><p>It must have a status code that is defined as cacheable by default (200, 203, 204, 206, 300, 301, 404, 405, 410, 414, 501).</p>",
+      "severity": "Informational"
+    },
+    {
+      "rule_id": "zap-10015",
+      "url": "https://f0f9769d1e81.ngrok-free.app",
+      "method": "GET",
+      "message": "Re-examine Cache-control Directives",
+      "evidence": "",
+      "solution": "<p>For secure content, ensure the cache-control HTTP header is set with \"no-cache, no-store, must-revalidate\". If an asset should be cached consider setting the directives \"public, max-age, immutable\".</p>",
+      "severity": "Informational"
+    },
+    {
+      "rule_id": "zap-90005-3",
+      "url": "https://f0f9769d1e81.ngrok-free.app",
+      "method": "GET",
+      "message": "Sec-Fetch-Dest Header is Missing",
+      "evidence": "",
+      "solution": "<p>Ensure that Sec-Fetch-Dest header is included in request headers.</p>",
+      "severity": "Informational"
+    },
+    {
+      "rule_id": "zap-90005-2",
+      "url": "https://f0f9769d1e81.ngrok-free.app",
+      "method": "GET",
+      "message": "Sec-Fetch-Mode Header is Missing",
+      "evidence": "",
+      "solution": "<p>Ensure that Sec-Fetch-Mode header is included in request headers.</p>",
+      "severity": "Informational"
+    },
+    {
+      "rule_id": "zap-90005-1",
+      "url": "https://f0f9769d1e81.ngrok-free.app",
+      "method": "GET",
+      "message": "Sec-Fetch-Site Header is Missing",
+      "evidence": "",
+      "solution": "<p>Ensure that Sec-Fetch-Site header is included in request headers.</p>",
+      "severity": "Informational"
+    },
+    {
+      "rule_id": "zap-90005-4",
+      "url": "https://f0f9769d1e81.ngrok-free.app",
+      "method": "GET",
+      "message": "Sec-Fetch-User Header is Missing",
+      "evidence": "",
+      "solution": "<p>Ensure that Sec-Fetch-User header is included in user initiated requests.</p>",
+      "severity": "Informational"
+    },
+    {
+      "rule_id": "zap-10049",
+      "url": "https://f0f9769d1e81.ngrok-free.app",
+      "method": "GET",
+      "message": "Storable and Cacheable Content",
+      "evidence": "",
+      "solution": "<p>Validate that the response does not contain sensitive, personal or user-specific information. If it does, consider the use of the following HTTP response headers, to limit, or prevent the content being stored and retrieved from the cache by another user:</p><p>Cache-Control: no-cache, no-store, must-revalidate, private</p><p>Pragma: no-cache</p><p>Expires: 0</p><p>This configuration directs both HTTP 1.0 and HTTP 1.1 compliant caching servers to not store the response, and to not retrieve the response (without validation) from the cache, in response to a similar request.</p>",
+      "severity": "Informational"
+    },
+    {
+      "rule_id": "zap-10104",
+      "url": "https://f0f9769d1e81.ngrok-free.app",
+      "method": "GET",
+      "message": "User Agent Fuzzer",
+      "evidence": "",
+      "solution": "",
+      "severity": "Informational"
+    }
+  ],
+  "summary": {
+    "total_vulnerabilities": 45
+  }
+}
