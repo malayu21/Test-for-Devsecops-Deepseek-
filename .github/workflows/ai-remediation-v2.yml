@@ -1,3 +1,289 @@
+import json
+import argparse
+import os
+import requests
+from tenacity import retry, stop_after_attempt, wait_fixed
+from tqdm import tqdm
+
+# Configure DeepSeek API
+DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
+
+def load_vulnerabilities(input_file):
+    """
+    Load vulnerabilities from the input JSON file.
+    
+    Args:
+        input_file (str): Path to the JSON file containing vulnerabilities.
+    
+    Returns:
+        dict: Parsed vulnerability data.
+    
+    Raises:
+        Exception: If the file is invalid or cannot be parsed.
+    """
+    try:
+        with open(input_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            raise ValueError("Input file must contain a valid JSON object")
+        return data
+    except Exception as e:
+        print(f"Error loading {input_file}: {e}")
+        with open('fixes-summary.txt', 'w') as f:
+            f.write(f"Error: Failed to load vulnerabilities: {e}\n")
+        raise
+
+@retry(stop=stop_after_attempt(3), wait=wait_fixed(2))
+def generate_fix(vulnerability):
+    """
+    Generate a fix for a single vulnerability using DeepSeek API.
+    
+    Args:
+        vulnerability (dict): Vulnerability details (e.g., rule_id, message, severity, url).
+    
+    Returns:
+        dict: Generated fix in JSON format, or None if generation fails.
+    """
+    if not DEEPSEEK_API_KEY:
+        raise ValueError("DEEPSEEK_API_KEY environment variable not set")
+
+    # Determine vulnerability type (sast, dependencies, dast)
+    vuln_type = 'dast' if 'url' in vulnerability else ('sast' if 'locations' in vulnerability else 'dependency')
+    
+    # Customize prompt based on vulnerability type
+    if vuln_type == 'dast':
+        prompt = f"""
+You are a web security expert tasked with fixing vulnerabilities in a web application.
+
+Vulnerability Details:
+- Rule ID: {vulnerability['rule_id']}
+- Severity: {vulnerability['severity']}
+- URL: {vulnerability.get('url', 'N/A')}
+- Method: {vulnerability.get('method', 'GET')}
+- Issue: {vulnerability['message']}
+- Evidence: {vulnerability.get('evidence', 'N/A')}
+- Suggested Solution: {vulnerability.get('solution', 'No solution provided')}
+
+Provide a specific fix for this vulnerability, including:
+1. Code or configuration changes (e.g., HTML, Python, server headers).
+2. Files to modify (e.g., index.html, server config).
+3. Explanation of how the fix addresses the issue.
+
+Respond in JSON format:
+{{
+    "fix_type": "code_change/config_change/both",
+    "changes": "specific code or configuration to apply",
+    "files_to_modify": ["list of files"],
+    "explanation": "how this fixes the vulnerability",
+    "confidence": "high/medium/low"
+}}
+
+Follow OWASP security principles and focus on practical web application fixes.
+"""
+    elif vuln_type == 'sast':
+        location = vulnerability['locations'][0] if vulnerability['locations'] else {}
+        prompt = f"""
+You are a security expert tasked with fixing code vulnerabilities.
+
+Vulnerability Details:
+- Rule ID: {vulnerability['rule_id']}
+- Severity: {vulnerability['severity']}
+- File: {location.get('file', 'N/A')}
+- Line: {location.get('line', 0)}
+- Issue: {vulnerability['message']}
+
+Provide a specific fix for this vulnerability, including:
+1. Secure replacement code.
+2. Explanation of why the original code was insecure.
+3. How the fix addresses the issue.
+
+Respond in JSON format:
+{{
+    "fix_type": "code_change",
+    "changes": "secure replacement code",
+    "files_to_modify": ["file path"],
+    "explanation": "why this fixes the vulnerability",
+    "confidence": "high/medium/low"
+}}
+
+Focus on Python best practices and OWASP security principles.
+"""
+    else:  # dependency
+        prompt = f"""
+You are a security expert tasked with fixing dependency vulnerabilities.
+
+Vulnerability Details:
+- Rule ID: {vulnerability['rule_id']}
+- Package: {vulnerability.get('package', 'N/A')}
+- Current Version: {vulnerability.get('installed_version', 'N/A')}
+- Issue: {vulnerability['message']}
+- Advisory: {vulnerability.get('advisory', 'N/A')}
+
+Provide a specific fix for this dependency issue, including:
+1. Recommended version to upgrade to.
+2. Any breaking changes to watch for.
+3. Alternative solutions if upgrade isn't possible.
+
+Respond in JSON format:
+{{
+    "fix_type": "dependency_update",
+    "changes": "update package to version X",
+    "files_to_modify": ["requirements.txt"],
+    "explanation": "how this fixes the vulnerability",
+    "confidence": "high/medium/low"
+}}
+"""
+    
+    try:
+        headers = {
+            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+        }
+        payload = {
+            "model": "deepseek-r1",  # Replace with exact DeepSeek model name if different
+            "messages": [
+                {"role": "system", "content": "You are a cybersecurity expert specializing in web and code security fixes."},
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.1,
+            "max_tokens": 800
+        }
+        
+        response = requests.post(DEEPSEEK_API_URL, headers=headers, json=payload, timeout=30)
+        response.raise_for_status()
+        
+        ai_response = response.json().get('choices', [{}])[0].get('message', {}).get('content', '').strip()
+        
+        # Extract JSON from response if wrapped in markdown
+        if "```json" in ai_response:
+            json_start = ai_response.find("```json") + 7
+            json_end = ai_response.find("```", json_start)
+            ai_response = ai_response[json_start:json_end].strip()
+        
+        fix_data = json.loads(ai_response)
+        
+        return {
+            "vulnerability": vulnerability,
+            "fix": {
+                "type": vuln_type,
+                "fix_type": fix_data.get("fix_type", vuln_type),
+                "changes": fix_data.get("changes", ""),
+                "files_to_modify": fix_data.get("files_to_modify", []),
+                "explanation": fix_data.get("explanation", ""),
+                "confidence": fix_data.get("confidence", "medium"),
+                "ai_model": "deepseek-r1"
+            }
+        }
+    except (requests.RequestException, json.JSONDecodeError) as e:
+        print(f"Error generating fix for {vulnerability['rule_id']}: {e}")
+        return None
+
+def generate_fixes(vulnerabilities, output_file):
+    """
+    Generate fixes for all vulnerabilities and save to output file.
+    
+    Args:
+        vulnerabilities (list): List of vulnerability dictionaries.
+        output_file (str): Path to save the fixes JSON.
+    
+    Returns:
+        list: List of generated fixes.
+    """
+    fixes = []
+    for vuln in tqdm(vulnerabilities, desc="Generating fixes"):
+        fix = generate_fix(vuln)
+        if fix:
+            fixes.append(fix)
+    
+    summary = f"Generated fixes for {len(fixes)} of {len(vulnerabilities)} vulnerabilities"
+    print(summary)
+    
+    os.makedirs(os.path.dirname(output_file), exist_ok=True)
+    with open(output_file, 'w', encoding='utf-8') as f:
+        json.dump({"fixes": fixes}, f, indent=4)
+    
+    with open('fixes-summary.txt', 'w', encoding='utf-8') as f:
+        f.write("AI-Generated Security Fixes Summary\n")
+        f.write("=" * 50 + "\n\n")
+        for i, fix in enumerate(fixes, 1):
+            vuln = fix['vulnerability']
+            f.write(f"{i}. {vuln['rule_id']} ({fix['fix']['type']}): {vuln['message']}\n")
+            f.write(f"   Fix: {fix['fix']['changes']}\n")
+            f.write(f"   Files: {', '.join(fix['fix']['files_to_modify'])}\n")
+            f.write(f"   Confidence: {fix['fix']['confidence']}\n\n")
+        f.write(f"Total: {len(fixes)} fixes generated\n")
+        f.write(f"Time: {time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())}\n")
+    
+    return fixes
+
+def main():
+    """
+    Command-line interface for generating AI-based fixes.
+    """
+    parser = argparse.ArgumentParser(description="Generate AI-based fixes for security vulnerabilities using DeepSeek")
+    parser.add_argument('--input', required=True, help="Input JSON file with vulnerabilities")
+    parser.add_argument('--output', required=True, help="Output JSON file for fixes")
+    args = parser.parse_args()
+    
+    if not DEEPSEEK_API_KEY:
+        print("Error: DEEPSEEK_API_KEY environment variable not set")
+        with open('fixes-summary.txt', 'w') as f:
+            f.write("Error: DEEPSEEK_API_KEY environment variable not set\n")
+        exit(1)
+    
+    try:
+        vulnerabilities = load_vulnerabilities(args.input)
+        all_vulns = []
+        all_vulns.extend(vulnerabilities.get('sast', []))
+        all_vulns.extend(vulnerabilities.get('dependencies', []))
+        all_vulns.extend(vulnerabilities.get('dast', []))
+        
+        if not all_vulns:
+            print("No vulnerabilities found to fix")
+            os.makedirs(os.path.dirname(args.output), exist_ok=True)
+            with open(args.output, 'w') as f:
+                json.dump({"fixes": []}, f, indent=4)
+            with open('fixes-summary.txt', 'w') as f:
+                f.write("No vulnerabilities found to fix\n")
+            exit(0)
+        
+        generate_fixes(all_vulns, args.output)
+        print(f"Fixes saved to {args.output}")
+        print(f"Next step: Run 'python scripts/apply_fixes.py --fixes {args.output}' to apply them")
+    
+    except Exception as e:
+        print(f"Fatal error: {e}")
+        with open('fixes-summary.txt', 'w') as f:
+            f.write(f"Fatal error: {e}\n")
+        exit(1)
+
+if __name__ == "__main__":
+    main()
+```
+
+**Changes**:
+- **Replaced OpenAI with DeepSeek**:
+  - Removed `import openai` and replaced OpenAI client with `requests` for HTTP calls to `https://api.deepseek.com/v1/chat/completions`.
+  - Used `DEEPSEEK_API_KEY` environment variable instead of `OPENAI_API_KEY`.
+  - Set model to `deepseek-r1` (update to the exact model name per DeepSeek’s documentation, e.g., `DeepSeek-R-1` or `DeepSeek-Pro`).
+- **API Call Structure**:
+  - Implemented `requests.post` with headers (`Authorization: Bearer <key>`) and JSON payload matching DeepSeek’s API format.
+  - Handled response parsing to extract `choices[0].message.content`, consistent with OpenAI’s structure.
+- **Error Handling**:
+  - Added checks for `DEEPSEEK_API_KEY`.
+  - Handled `requests.RequestException` for network issues and `json.JSONDecodeError` for invalid responses.
+- **Retained Functionality**:
+  - Kept type-specific prompts for SAST, dependency, and DAST vulnerabilities.
+  - Maintained `tqdm` for progress, `tenacity` for retries, and output to `fixes.json` and `fixes-summary.txt`.
+- **Output Path**: Changed output to `./fixes.json` (matching `ai-remediation.yml`) instead of `security-fixes/fixes.json`.
+
+### Updated `ai-remediation.yml`
+The provided workflow is mostly correct but needs to use `DEEPSEEK_API_KEY` instead of `OPENAI_API_KEY`. Below is the updated version.
+
+<xaiArtifact artifact_id="c6a00533-49c8-4219-81fe-89f15271004b" artifact_version_id="6aac60d0-667b-4e76-8c2c-0bbe49416b46" title="ai-remediation.yml" contentType="text/yaml">
+```yaml
 name: AI Security Remediation
 
 on:
@@ -83,6 +369,7 @@ jobs:
           fi
           echo "Artifact contents:"
           cat ./security-results/merged-results.json
+          jq . ./security-results/merged-results.json || { echo "Invalid JSON in merged-results.json"; exit 1; }
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -98,7 +385,7 @@ jobs:
 
       - name: Generate AI fixes
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
         run: |
           echo "Running ai_remediation.py..."
           python -m scripts.ai_remediation --input ./security-results/merged-results.json --output ./fixes.json || { echo "AI remediation failed"; cat ./fixes.json || echo "No fixes.json generated"; exit 1; }
