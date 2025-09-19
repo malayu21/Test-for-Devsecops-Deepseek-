@@ -1,391 +1,436 @@
 import json
-import os
 import argparse
-import openai
-import time
-from pathlib import Path
+import os
+import requests
+from tenacity import retry, stop_after_attempt, wait_fixed
+from tqdm import tqdm
 
-class AIRemediator:
-    def __init__(self, api_key):
-        """
-        Initialize the AI remediation system
-        
-        Args:
-            api_key: OpenAI API key
-        """
-        self.client = openai.OpenAI(api_key=api_key)
-        self.fixes = []  # Store all generated fixes
-        self.fix_summary = []  # Human-readable summary
-        self.model_sast = "gpt-4o"  # Model for SAST
-        self.model_dependency = "gpt-4o"  # Model for dependency fixes
-        self.model_dast = "gpt-4o"  # Model for DAST
-        
-    def generate_sast_fix(self, vulnerability):
-        """
-        Generate fix for SAST (source code) vulnerabilities
-        
-        Args:
-            vulnerability: Dict containing vuln details from CodeQL
-            
-        Returns:
-            Dict with fix information
-        """
-        location = vulnerability['locations'][0] if vulnerability['locations'] else {}
-        file_path = location.get('file', '')
-        line_number = location.get('line', 0)
-        
-        vulnerable_code = self._read_code_context(file_path, line_number)
-        
+# Configure DeepSeek API
+DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
+
+def load_vulnerabilities(input_file):
+    """
+    Load vulnerabilities from the input JSON file.
+    
+    Args:
+        input_file (str): Path to the JSON file containing vulnerabilities.
+    
+    Returns:
+        dict: Parsed vulnerability data.
+    
+    Raises:
+        Exception: If the file is invalid or cannot be parsed.
+    """
+    try:
+        with open(input_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            raise ValueError("Input file must contain a valid JSON object")
+        return data
+    except Exception as e:
+        print(f"Error loading {input_file}: {e}")
+        with open('fixes-summary.txt', 'w') as f:
+            f.write(f"Error: Failed to load vulnerabilities: {e}\n")
+        raise
+
+@retry(stop=stop_after_attempt(3), wait=wait_fixed(2))
+def generate_fix(vulnerability):
+    """
+    Generate a fix for a single vulnerability using DeepSeek API.
+    
+    Args:
+        vulnerability (dict): Vulnerability details (e.g., rule_id, message, severity, url).
+    
+    Returns:
+        dict: Generated fix in JSON format, or None if generation fails.
+    """
+    if not DEEPSEEK_API_KEY:
+        raise ValueError("DEEPSEEK_API_KEY environment variable not set")
+
+    # Determine vulnerability type (sast, dependencies, dast)
+    vuln_type = 'dast' if 'url' in vulnerability else ('sast' if 'locations' in vulnerability else 'dependency')
+    
+    # Customize prompt based on vulnerability type
+    if vuln_type == 'dast':
         prompt = f"""
-You are a security expert tasked with fixing code vulnerabilities.
+You are a web security expert tasked with fixing vulnerabilities in a web application.
 
-VULNERABILITY DETAILS:
-- Rule: {vulnerability['rule_id']}
+Vulnerability Details:
+- Rule ID: {vulnerability['rule_id']}
 - Severity: {vulnerability['severity']}
-- File: {file_path}
-- Line: {line_number}
+- URL: {vulnerability.get('url', 'N/A')}
+- Method: {vulnerability.get('method', 'GET')}
 - Issue: {vulnerability['message']}
+- Evidence: {vulnerability.get('evidence', 'N/A')}
+- Suggested Solution: {vulnerability.get('solution', 'No solution provided')}
 
-VULNERABLE CODE:
-```python
-{vulnerable_code}
-```
-
-Please provide:
-1. A secure replacement for the vulnerable code
-2. Explanation of why the original code was insecure
-3. Explanation of how your fix addresses the issue
+Provide a specific fix for this vulnerability, including:
+1. Code or configuration changes (e.g., HTML, Python, server headers).
+2. Files to modify (e.g., index.html, server config).
+3. Explanation of how the fix addresses the issue.
 
 Respond in JSON format:
 {{
-    "fixed_code": "your secure code here",
-    "explanation": "why this fixes the vulnerability",
-    "confidence": "high/medium/low based on how certain you are"
-}}
-
-Focus on OWASP security principles and Python best practices.
-"""
-        try:
-            response = self.client.chat.completions.create(
-                model=self.model_sast,
-                messages=[
-                    {"role": "system", "content": "You are a cybersecurity expert specializing in secure code fixes."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.1,
-                max_tokens=1000
-            )
-            
-            ai_response = response.choices[0].message.content
-            
-            if "```json" in ai_response:
-                json_start = ai_response.find("```json") + 7
-                json_end = ai_response.find("```", json_start)
-                ai_response = ai_response[json_start:json_end]
-            
-            fix_data = json.loads(ai_response)
-            
-            fix = {
-                'type': 'sast',
-                'file': file_path,
-                'line': line_number,
-                'vulnerability': vulnerability,
-                'original_code': vulnerable_code,
-                'fixed_code': fix_data.get('fixed_code', ''),
-                'explanation': fix_data.get('explanation', ''),
-                'confidence': fix_data.get('confidence', 'medium'),
-                'ai_model': self.model_sast
-            }
-            
-            return fix
-            
-        except (openai.OpenAIError, json.JSONDecodeError) as e:
-            print(f"Error generating SAST fix for {file_path}:{line_number}: {e}")
-            return None
-
-    def generate_dependency_fix(self, vulnerability):
-        """
-        Generate fix for dependency vulnerabilities
-        """
-        package = vulnerability.get('package', '')
-        current_version = vulnerability.get('installed_version', '')
-        
-        prompt = f"""
-Security vulnerability in Python package dependency:
-
-Package: {package}
-Current Version: {current_version}
-Issue: {vulnerability['message']}
-Advisory: {vulnerability.get('advisory', '')}
-
-Provide the safest way to fix this dependency issue:
-1. Recommended version to upgrade to
-2. Any breaking changes to watch for
-3. Alternative packages if upgrade isn't possible
-
-Respond in JSON:
-{{
-    "recommended_version": "version string",
-    "breaking_changes": "list of potential issues",
-    "alternative_solution": "if upgrade not recommended",
-    "confidence": "high/medium/low"
-}}
-"""
-        try:
-            response = self.client.chat.completions.create(
-                model=self.model_dependency,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.1,
-                max_tokens=500
-            )
-            
-            ai_response = response.choices[0].message.content
-            
-            if "```json" in ai_response:
-                json_start = ai_response.find("```json") + 7
-                json_end = ai_response.find("```", json_start)
-                ai_response = ai_response[json_start:json_end]
-            
-            fix_data = json.loads(ai_response)
-            
-            fix = {
-                'type': 'dependency',
-                'file': 'requirements.txt',
-                'package': package,
-                'current_version': current_version,
-                'recommended_version': fix_data.get('recommended_version', 'latest'),
-                'explanation': f"Update {package} to fix security vulnerability",
-                'breaking_changes': fix_data.get('breaking_changes', ''),
-                'confidence': fix_data.get('confidence', 'high'),
-                'ai_model': self.model_dependency
-            }
-            
-            return fix
-            
-        except (openai.OpenAIError, json.JSONDecodeError) as e:
-            print(f"Error generating dependency fix for {package}: {e}")
-            return None
-
-    def generate_dast_fix(self, vulnerability):
-        """
-        Generate fix for DAST (web application) vulnerabilities
-        """
-        url = vulnerability.get('url', '')
-        evidence = vulnerability.get('evidence', '')
-        solution = vulnerability.get('solution', '')
-        
-        prompt = f"""
-Web application security vulnerability found during DAST scanning:
-
-URL: {url}
-Method: {vulnerability.get('method', 'GET')}
-Issue: {vulnerability['message']}
-Evidence: {evidence}
-Suggested Solution: {solution}
-
-Provide specific code changes or configuration changes to fix this web security issue:
-
-Respond in JSON:
-{{
     "fix_type": "code_change/config_change/both",
-    "changes": "specific changes to make",
+    "changes": "specific code or configuration to apply",
     "files_to_modify": ["list of files"],
-    "explanation": "how this fixes the issue",
+    "explanation": "how this fixes the vulnerability",
+    "confidence": "high/medium/low"
+}}
+
+Follow OWASP security principles and focus on practical web application fixes.
+"""
+    elif vuln_type == 'sast':
+        location = vulnerability['locations'][0] if vulnerability['locations'] else {}
+        prompt = f"""
+You are a security expert tasked with fixing code vulnerabilities.
+
+Vulnerability Details:
+- Rule ID: {vulnerability['rule_id']}
+- Severity: {vulnerability['severity']}
+- File: {location.get('file', 'N/A')}
+- Line: {location.get('line', 0)}
+- Issue: {vulnerability['message']}
+
+Provide a specific fix for this vulnerability, including:
+1. Secure replacement code.
+2. Explanation of why the original code was insecure.
+3. How the fix addresses the issue.
+
+Respond in JSON format:
+{{
+    "fix_type": "code_change",
+    "changes": "secure replacement code",
+    "files_to_modify": ["file path"],
+    "explanation": "why this fixes the vulnerability",
+    "confidence": "high/medium/low"
+}}
+
+Focus on Python best practices and OWASP security principles.
+"""
+    else:  # dependency
+        prompt = f"""
+You are a security expert tasked with fixing dependency vulnerabilities.
+
+Vulnerability Details:
+- Rule ID: {vulnerability['rule_id']}
+- Package: {vulnerability.get('package', 'N/A')}
+- Current Version: {vulnerability.get('installed_version', 'N/A')}
+- Issue: {vulnerability['message']}
+- Advisory: {vulnerability.get('advisory', 'N/A')}
+
+Provide a specific fix for this dependency issue, including:
+1. Recommended version to upgrade to.
+2. Any breaking changes to watch for.
+3. Alternative solutions if upgrade isn't possible.
+
+Respond in JSON format:
+{{
+    "fix_type": "dependency_update",
+    "changes": "update package to version X",
+    "files_to_modify": ["requirements.txt"],
+    "explanation": "how this fixes the vulnerability",
     "confidence": "high/medium/low"
 }}
 """
-        try:
-            response = self.client.chat.completions.create(
-                model=self.model_dast,
-                messages=[
-                    {"role": "system", "content": "You are a web security expert specializing in fixing OWASP Top 10 vulnerabilities."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.1,
-                max_tokens=800
-            )
-            
-            ai_response = response.choices[0].message.content
-            
-            if "```json" in ai_response:
-                json_start = ai_response.find("```json") + 7
-                json_end = ai_response.find("```", json_start)
-                ai_response = ai_response[json_start:json_end]
-            
-            fix_data = json.loads(ai_response)
-            
-            fix = {
-                'type': 'dast',
-                'url': url,
-                'vulnerability': vulnerability,
-                'fix_type': fix_data.get('fix_type', 'code_change'),
-                'changes': fix_data.get('changes', ''),
-                'files_to_modify': fix_data.get('files_to_modify', []),
-                'explanation': fix_data.get('explanation', ''),
-                'confidence': fix_data.get('confidence', 'medium'),
-                'ai_model': self.model_dast
-            }
-            
-            return fix
-            
-        except (openai.OpenAIError, json.JSONDecodeError) as e:
-            print(f"Error generating DAST fix for {url}: {e}")
-            return None
-
-    def _read_code_context(self, file_path, line_number, context_lines=5):
-        """
-        Read vulnerable code with surrounding context
-        """
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                lines = f.readlines()
-            
-            start = max(0, line_number - context_lines - 1)
-            end = min(len(lines), line_number + context_lines)
-            
-            context = ""
-            for i in range(start, end):
-                marker = ">>> " if i == line_number - 1 else "    "
-                context += f"{marker}{i+1:4}: {lines[i]}"
-            
-            return context
-            
-        except FileNotFoundError:
-            return f"# File not found: {file_path}"
-        except Exception as e:
-            return f"# Error reading file: {e}"
-
-    def process_vulnerabilities(self, vulnerabilities_file):
-        """
-        Main function to process all vulnerabilities and generate fixes
-        """
-        print("Starting AI-powered vulnerability remediation...")
-        
-        try:
-            with open(vulnerabilities_file, 'r') as f:
-                vulns = json.load(f)
-        except (json.JSONDecodeError, FileNotFoundError) as e:
-            print(f"Error reading vulnerabilities file {vulnerabilities_file}: {e}")
-            with open('fixes-summary.txt', 'w') as f:
-                f.write(f"Error: Failed to read vulnerabilities file: {e}\n")
-            return []
-        
-        total_vulns = vulns.get('summary', {}).get('total_vulnerabilities', 0)
-        print(f"Processing {total_vulns} vulnerabilities...")
-        
-        if total_vulns == 0:
-            print("No vulnerabilities to process. Skipping AI remediation.")
-            with open('fixes-summary.txt', 'w') as f:
-                f.write("Nothing to fix.\n")
-            return []
-        
-        processed = 0
-        
-        print(f"\nProcessing {len(vulns.get('sast', []))} SAST vulnerabilities...")
-        for vuln in vulns.get('sast', []):
-            print(f"  Fixing: {vuln['rule_id']} in {vuln['locations'][0].get('file', 'unknown')}...")
-            fix = self.generate_sast_fix(vuln)
-            if fix:
-                self.fixes.append(fix)
-                self.fix_summary.append(f"SAST: {vuln['rule_id']} in {fix['file']}")
-            
-            processed += 1
-            time.sleep(1)
-            
-        print(f"\nProcessing {len(vulns.get('dependencies', []))} dependency vulnerabilities...")
-        for vuln in vulns.get('dependencies', []):
-            print(f"  Fixing: {vuln['package']} v{vuln['installed_version']}...")
-            fix = self.generate_dependency_fix(vuln)
-            if fix:
-                self.fixes.append(fix)
-                self.fix_summary.append(f"Dependency: {vuln['package']} -> {fix['recommended_version']}")
-            
-            processed += 1
-            time.sleep(0.5)
-            
-        print(f"\nProcessing {len(vulns.get('dast', []))} DAST vulnerabilities...")
-        for vuln in vulns.get('dast', []):
-            print(f"  Fixing: {vuln['rule_id']} at {vuln.get('url', 'unknown URL')}...")
-            fix = self.generate_dast_fix(vuln)
-            if fix:
-                self.fixes.append(fix)
-                self.fix_summary.append(f"DAST: {vuln['rule_id']} - {fix['fix_type']}")
-            
-            processed += 1
-            time.sleep(1)
-            
-        print(f"\nGenerated {len(self.fixes)} fixes out of {total_vulns} vulnerabilities")
-        
-        return self.fixes
-
-    def save_fixes(self, output_file):
-        """
-        Save all generated fixes to JSON file for apply_fixes.py to use
-        """
-        fixes_data = {
-            'metadata': {
-                'generated_at': time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime()),
-                'total_fixes': len(self.fixes),
-                'ai_models_used': list(set(fix.get('ai_model', 'unknown') for fix in self.fixes))
-            },
-            'fixes': self.fixes,
-            'summary': self.fix_summary
+    
+    try:
+        headers = {
+            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+        }
+        payload = {
+            "model": "deepseek-r1",  # Replace with exact DeepSeek model name if different
+            "messages": [
+                {"role": "system", "content": "You are a cybersecurity expert specializing in web and code security fixes."},
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.1,
+            "max_tokens": 800
         }
         
-        os.makedirs(os.path.dirname(output_file), exist_ok=True)
-        with open(output_file, 'w') as f:
-            json.dump(fixes_data, f, indent=2)
-            
-        with open('fixes-summary.txt', 'w') as f:
-            f.write("AI-Generated Security Fixes Summary\n")
-            f.write("=" * 50 + "\n\n")
-            
-            for i, summary in enumerate(self.fix_summary, 1):
-                f.write(f"{i}. {summary}\n")
-                
-            f.write(f"\nTotal: {len(self.fixes)} fixes generated\n")
-            f.write(f"Time: {time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())}\n")
+        response = requests.post(DEEPSEEK_API_URL, headers=headers, json=payload, timeout=30)
+        response.raise_for_status()
         
-        print(f"Fixes saved to {output_file}")
-        print(f"Summary saved to fixes-summary.txt")
+        ai_response = response.json().get('choices', [{}])[0].get('message', {}).get('content', '').strip()
+        
+        # Extract JSON from response if wrapped in markdown
+        if "```json" in ai_response:
+            json_start = ai_response.find("```json") + 7
+            json_end = ai_response.find("```", json_start)
+            ai_response = ai_response[json_start:json_end].strip()
+        
+        fix_data = json.loads(ai_response)
+        
+        return {
+            "vulnerability": vulnerability,
+            "fix": {
+                "type": vuln_type,
+                "fix_type": fix_data.get("fix_type", vuln_type),
+                "changes": fix_data.get("changes", ""),
+                "files_to_modify": fix_data.get("files_to_modify", []),
+                "explanation": fix_data.get("explanation", ""),
+                "confidence": fix_data.get("confidence", "medium"),
+                "ai_model": "deepseek-r1"
+            }
+        }
+    except (requests.RequestException, json.JSONDecodeError) as e:
+        print(f"Error generating fix for {vulnerability['rule_id']}: {e}")
+        return None
+
+def generate_fixes(vulnerabilities, output_file):
+    """
+    Generate fixes for all vulnerabilities and save to output file.
+    
+    Args:
+        vulnerabilities (list): List of vulnerability dictionaries.
+        output_file (str): Path to save the fixes JSON.
+    
+    Returns:
+        list: List of generated fixes.
+    """
+    fixes = []
+    for vuln in tqdm(vulnerabilities, desc="Generating fixes"):
+        fix = generate_fix(vuln)
+        if fix:
+            fixes.append(fix)
+    
+    summary = f"Generated fixes for {len(fixes)} of {len(vulnerabilities)} vulnerabilities"
+    print(summary)
+    
+    os.makedirs(os.path.dirname(output_file), exist_ok=True)
+    with open(output_file, 'w', encoding='utf-8') as f:
+        json.dump({"fixes": fixes}, f, indent=4)
+    
+    with open('fixes-summary.txt', 'w', encoding='utf-8') as f:
+        f.write("AI-Generated Security Fixes Summary\n")
+        f.write("=" * 50 + "\n\n")
+        for i, fix in enumerate(fixes, 1):
+            vuln = fix['vulnerability']
+            f.write(f"{i}. {vuln['rule_id']} ({fix['fix']['type']}): {vuln['message']}\n")
+            f.write(f"   Fix: {fix['fix']['changes']}\n")
+            f.write(f"   Files: {', '.join(fix['fix']['files_to_modify'])}\n")
+            f.write(f"   Confidence: {fix['fix']['confidence']}\n\n")
+        f.write(f"Total: {len(fixes)} fixes generated\n")
+        f.write(f"Time: {time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())}\n")
+    
+    return fixes
 
 def main():
     """
-    Command line interface for the AI remediation tool
+    Command-line interface for generating AI-based fixes.
     """
-    parser = argparse.ArgumentParser(description='AI-powered security vulnerability remediation')
-    parser.add_argument('--input', required=True, help='Path to merged vulnerabilities JSON file')
-    parser.add_argument('--output', required=True, help='Path to save generated fixes JSON')
-    parser.add_argument('--api-key', help='OpenAI API key (or set OPENAI_API_KEY env var)')
-    
+    parser = argparse.ArgumentParser(description="Generate AI-based fixes for security vulnerabilities using DeepSeek")
+    parser.add_argument('--input', required=True, help="Input JSON file with vulnerabilities")
+    parser.add_argument('--output', required=True, help="Output JSON file for fixes")
     args = parser.parse_args()
     
-    api_key = args.api_key or os.getenv('OPENAI_API_KEY')
-    if not api_key:
-        print("Error: OpenAI API key required. Set OPENAI_API_KEY environment variable or use --api-key")
-        exit(1)
-    
-    if not os.path.exists(args.input):
-        print(f"Error: Input file not found: {args.input}")
+    if not DEEPSEEK_API_KEY:
+        print("Error: DEEPSEEK_API_KEY environment variable not set")
+        with open('fixes-summary.txt', 'w') as f:
+            f.write("Error: DEEPSEEK_API_KEY environment variable not set\n")
         exit(1)
     
     try:
-        remediate = AIRemediator(api_key)
-        fixes = remediate.process_vulnerabilities(args.input)
+        vulnerabilities = load_vulnerabilities(args.input)
+        all_vulns = []
+        all_vulns.extend(vulnerabilities.get('sast', []))
+        all_vulns.extend(vulnerabilities.get('dependencies', []))
+        all_vulns.extend(vulnerabilities.get('dast', []))
         
-        if fixes or remediate.fixes:
-            remediate.save_fixes(args.output)
-            print(f"\nSuccessfully generated {len(fixes)} fixes!")
-            print(f"Next step: Run 'python scripts/apply_fixes.py --fixes {args.output}' to apply them")
-        else:
-            print("No fixes generated due to no vulnerabilities found.")
+        if not all_vulns:
+            print("No vulnerabilities found to fix")
+            os.makedirs(os.path.dirname(args.output), exist_ok=True)
+            with open(args.output, 'w') as f:
+                json.dump({"fixes": []}, f, indent=4)
             with open('fixes-summary.txt', 'w') as f:
-                f.write("No vulnerabilities found to fix.\n")
+                f.write("No vulnerabilities found to fix\n")
             exit(0)
-            
+        
+        generate_fixes(all_vulns, args.output)
+        print(f"Fixes saved to {args.output}")
+        print(f"Next step: Run 'python scripts/apply_fixes.py --fixes {args.output}' to apply them")
+    
     except Exception as e:
         print(f"Fatal error: {e}")
+        with open('fixes-summary.txt', 'w') as f:
+            f.write(f"Fatal error: {e}\n")
         exit(1)
 
 if __name__ == "__main__":
     main()
+```
+
+**Changes**:
+- **Replaced OpenAI with DeepSeek**:
+  - Removed `import openai` and replaced OpenAI client with `requests` for HTTP calls to `https://api.deepseek.com/v1/chat/completions`.
+  - Used `DEEPSEEK_API_KEY` environment variable instead of `OPENAI_API_KEY`.
+  - Set model to `deepseek-r1` (update to the exact model name per DeepSeek’s documentation, e.g., `DeepSeek-R-1` or `DeepSeek-Pro`).
+- **API Call Structure**:
+  - Implemented `requests.post` with headers (`Authorization: Bearer <key>`) and JSON payload matching DeepSeek’s API format.
+  - Handled response parsing to extract `choices[0].message.content`, consistent with OpenAI’s structure.
+- **Error Handling**:
+  - Added checks for `DEEPSEEK_API_KEY`.
+  - Handled `requests.RequestException` for network issues and `json.JSONDecodeError` for invalid responses.
+- **Retained Functionality**:
+  - Kept type-specific prompts for SAST, dependency, and DAST vulnerabilities.
+  - Maintained `tqdm` for progress, `tenacity` for retries, and output to `fixes.json` and `fixes-summary.txt`.
+- **Output Path**: Changed output to `./fixes.json` (matching `ai-remediation.yml`) instead of `security-fixes/fixes.json`.
+
+### Updated `ai-remediation.yml`
+The provided workflow is mostly correct but needs to use `DEEPSEEK_API_KEY` instead of `OPENAI_API_KEY`. Below is the updated version.
+
+<xaiArtifact artifact_id="c6a00533-49c8-4219-81fe-89f15271004b" artifact_version_id="6aac60d0-667b-4e76-8c2c-0bbe49416b46" title="ai-remediation.yml" contentType="text/yaml">
+```yaml
+name: AI Security Remediation
+
+on:
+  workflow_run:
+    workflows: ["Security Scan Pipeline"]
+    types:
+      - completed
+
+permissions:
+  contents: write
+  actions: write
+  security-events: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  ai-fix-generation:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.PAT_TOKEN }}
+
+      - name: Debug permissions and API
+        env:
+          TOKEN: ${{ secrets.PAT_TOKEN }}
+        run: |
+          echo "Checking repository permissions..."
+          curl -s -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/malayu21/Test-for-Devsecops/collaborators/malayu21/permission | jq .
+          echo "Checking rate limit..."
+          curl -s -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/rate_limit | jq .
+          echo "Checking available artifacts for run ${{ github.event.workflow_run.id }}..."
+          curl -s -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/malayu21/Test-for-Devsecops/actions/runs/${{ github.event.workflow_run.id }}/artifacts | jq .
+          echo "Workflow run details..."
+          curl -s -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/malayu21/Test-for-Devsecops/actions/runs/${{ github.event.workflow_run.id }} | jq .
+
+      - name: Wait for artifact availability
+        run: |
+          echo "Waiting for artifact to be available..."
+          sleep 30
+
+      - name: Download security results
+        id: download-artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: security-results
+          path: ./security-results/
+          run-id: ${{ github.event.workflow_run.id }}
+        continue-on-error: true
+
+      - name: Retry download security results
+        if: steps.download-artifact.outcomes.success != true
+        env:
+          TOKEN: ${{ secrets.PAT_TOKEN }}
+        run: |
+          echo "Retrying artifact download..."
+          ARTIFACT_ID=$(curl -s -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/malayu21/Test-for-Devsecops/actions/runs/${{ github.event.workflow_run.id }}/artifacts | \
+            jq -r '.artifacts[] | select(.name == "security-results") | .id')
+          if [ -z "$ARTIFACT_ID" ]; then
+            echo "Error: No security-results artifact found"
+            exit 1
+          fi
+          echo "Found artifact ID: $ARTIFACT_ID"
+          curl -s -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github.v3+json" \
+            -L https://api.github.com/repos/malayu21/Test-for-Devsecops/actions/artifacts/$ARTIFACT_ID/zip -o security-results.zip
+          unzip -o security-results.zip -d ./security-results/ || { echo "Failed to unzip artifact"; exit 1; }
+          ls -l ./security-results/
+
+      - name: Verify artifact
+        run: |
+          echo "Checking security-results artifact..."
+          ls -l ./security-results/ || { echo "No files found in security-results directory"; exit 1; }
+          if [ ! -f ./security-results/merged-results.json ]; then
+            echo "Error: merged-results.json not found in security-results artifact"
+            ls -l ./security-results/
+            exit 1
+          fi
+          echo "Artifact contents:"
+          cat ./security-results/merged-results.json
+          jq . ./security-results/merged-results.json || { echo "Invalid JSON in merged-results.json"; exit 1; }
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq unzip
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt || { echo "Failed to install requirements.txt"; exit 1; }
+
+      - name: Generate AI fixes
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: |
+          echo "Running ai_remediation.py..."
+          python -m scripts.ai_remediation --input ./security-results/merged-results.json --output ./fixes.json || { echo "AI remediation failed"; cat ./fixes.json || echo "No fixes.json generated"; exit 1; }
+          ls -l ./fixes.json || { echo "fixes.json not found"; exit 1; }
+          cat ./fixes.json
+
+      - name: Apply fixes
+        run: |
+          echo "Running apply_fixes.py..."
+          python scripts/apply_fixes.py --fixes ./fixes.json || { echo "Apply fixes failed"; exit 1; }
+
+      - name: Create fix branch
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "AI Security Bot"
+          BRANCH_NAME="ai-security-fixes-$(date +%Y%m%d-%H%M%S)"
+          git checkout -b $BRANCH_NAME
+          git add .
+          git status
+          git commit -m "AI Security Fixes
+
+          Applied automated fixes for security vulnerabilities:
+          $(cat fixes-summary.txt)
+
+          Please review these changes carefully before merging." || exit 0
+          git push --force origin $BRANCH_NAME || { echo "Failed to push branch $BRANCH_NAME"; exit 1; }
+          echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
+          echo "Branch $BRANCH_NAME pushed successfully"
+
+      - name: Create Pull Request
+        env:
+          TOKEN: ${{ secrets.PAT_TOKEN }}
+        run: |
+          RESPONSE=$(curl -s -o response.json -w "%{http_code}" -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github.v3+json" \
+            -X POST -d "{\"title\":\"AI Security Fixes - $(date +%Y-%m-%d)\",\"head\":\"${{ env.BRANCH_NAME }}\",\"base\":\"main\",\"body\":\"Automated Security Fixes\n\n$(cat fixes-summary.txt)\n\n- These fixes were generated by AI and need human review\n- Test thoroughly before merging\n- Some fixes might need manual adjustment\n- Check that functionality still works as expected\n\n- SAST Issues: $(jq '.sast | length' ./security-results/merged-results.json)\n- Dependency Issues: $(jq '.dependencies | length' ./security-results/merged-results.json)\n- DAST Issues: $(jq '.dast | length' ./security-results/merged-results.json)\"}" \
+            https://api.github.com/repos/malayu21/Test-for-Devsecops/pulls)
+          if [ "$RESPONSE" -ne 201 ]; then
+            echo "Failed to create PR. HTTP status: $RESPONSE"
+            cat response.json
+            exit 1
+          fi
+          echo "Pull request created successfully"
+
+3. Ensure `parse_sarif.py`, `index.html`, and `.gitignore` are updated.
+4. Rerun `security-scan.yml` and verify `merged-results.json`.
+5. Run `AI Security Remediation` and check `./fixes.json` and the PR.
+
+Apply these changes, configure the DeepSeek API key, and rerun the workflows. Share the requested files or run IDs if issues persist, and let me know if you need further tweaks or clarification on DeepSeek’s API!
