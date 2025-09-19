@@ -59,24 +59,54 @@ jobs:
           TOKEN: ${{ secrets.PAT_TOKEN }}
         run: |
           echo "Retrying artifact download..."
-          ARTIFACT_ID=$(curl -s -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github.v3+json" \
-            https://api.github.com/repos/malayu21/Test-for-Devsecops/actions/runs/${{ github.event.workflow_run.id }}/artifacts | \
-            jq -r '.artifacts[] | select(.name == "security-results") | .id')
+          
+          # Get artifacts response and check if it's valid
+          ARTIFACTS_RESPONSE=$(curl -s -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/malayu21/Test-for-Devsecops/actions/runs/${{ github.event.workflow_run.id }}/artifacts)
+          
+          echo "Raw artifacts response:"
+          echo "$ARTIFACTS_RESPONSE"
+          
+          # Check if response contains artifacts array
+          if echo "$ARTIFACTS_RESPONSE" | jq -e '.artifacts' >/dev/null 2>&1; then
+            ARTIFACT_ID=$(echo "$ARTIFACTS_RESPONSE" | jq -r '.artifacts[] | select(.name == "security-results") | .id' | head -1)
+          else
+            echo "No artifacts array in response, trying alternative approach..."
+            ARTIFACT_ID=""
+          fi
+          
           if [ -z "$ARTIFACT_ID" ] || [ "$ARTIFACT_ID" = "null" ]; then
-            echo "Error: No security-results artifact found for run ${{ github.event.workflow_run.id }}"
-            # Try to get the most recent security-results artifact
-            echo "Looking for latest security-results artifact..."
-            ARTIFACT_ID=$(curl -s -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github.v3+json" \
-              https://api.github.com/repos/malayu21/Test-for-Devsecops/actions/artifacts | \
-              jq -r '.artifacts[] | select(.name == "security-results" and .expired == false) | .id' | head -1)
+            echo "No security-results artifact found for run ${{ github.event.workflow_run.id }}"
+            echo "Looking for latest security-results artifact from repository..."
+            
+            REPO_ARTIFACTS_RESPONSE=$(curl -s -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github.v3+json" \
+              https://api.github.com/repos/malayu21/Test-for-Devsecops/actions/artifacts)
+            
+            if echo "$REPO_ARTIFACTS_RESPONSE" | jq -e '.artifacts' >/dev/null 2>&1; then
+              ARTIFACT_ID=$(echo "$REPO_ARTIFACTS_RESPONSE" | jq -r '.artifacts[] | select(.name == "security-results" and .expired == false) | .id' | head -1)
+              echo "Found latest artifact ID: $ARTIFACT_ID"
+            fi
+            
             if [ -z "$ARTIFACT_ID" ] || [ "$ARTIFACT_ID" = "null" ]; then
-              echo "No security-results artifacts available"
+              echo "No security-results artifacts available anywhere"
+              echo "Available artifacts:"
+              echo "$REPO_ARTIFACTS_RESPONSE" | jq -r '.artifacts[]? | "\(.name) - \(.created_at) - expired: \(.expired)"' | head -10 || echo "No artifacts found"
               exit 1
             fi
           fi
-          echo "Found artifact ID: $ARTIFACT_ID"
+          
+          echo "Using artifact ID: $ARTIFACT_ID"
+          
+          # Download the artifact
           curl -s -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github.v3+json" \
             -L https://api.github.com/repos/malayu21/Test-for-Devsecops/actions/artifacts/$ARTIFACT_ID/zip -o security-results.zip
+          
+          if [ ! -f security-results.zip ] || [ ! -s security-results.zip ]; then
+            echo "Failed to download artifact or file is empty"
+            ls -la security-results.zip 2>/dev/null || echo "security-results.zip not found"
+            exit 1
+          fi
+          
           unzip -o security-results.zip -d ./security-results/ || { echo "Failed to unzip artifact"; exit 1; }
           ls -l ./security-results/
 
