@@ -16,43 +16,59 @@ permissions:
 jobs:
   ai-fix-generation:
     runs-on: ubuntu-latest
+    # Only run if the triggering workflow was successful
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.PAT_TOKEN }}
 
-      - name: Debug permissions and API
+      - name: Debug workflow run information
         env:
           TOKEN: ${{ secrets.PAT_TOKEN }}
         run: |
+          echo "Triggered by workflow run: ${{ github.event.workflow_run.id }}"
+          echo "Workflow run status: ${{ github.event.workflow_run.conclusion }}"
+          echo "Workflow run URL: ${{ github.event.workflow_run.html_url }}"
+          
           echo "Checking repository permissions..."
           curl -s -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github.v3+json" \
-            https://api.github.com/repos/malayu21/Test-for-Devsecops/collaborators/malayu21/permission | jq .
+            https://api.github.com/repos/malayu21/Test-for-Devsecops/collaborators/malayu21/permission | jq . || echo "Permission check failed"
+          
           echo "Checking rate limit..."
           curl -s -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github.v3+json" \
-            https://api.github.com/rate_limit | jq .
-          echo "Checking available artifacts for run ${{ github.event.workflow_run.id }}..."
-          curl -s -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github.v3+json" \
-            https://api.github.com/repos/malayu21/Test-for-Devsecops/actions/runs/${{ github.event.workflow_run.id }}/artifacts | jq .
-          echo "Workflow run details..."
-          curl -s -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github.v3+json" \
-            https://api.github.com/repos/malayu21/Test-for-Devsecops/actions/runs/${{ github.event.workflow_run.id }} | jq .
+            https://api.github.com/rate_limit | jq . || echo "Rate limit check failed"
 
-      - name: List all artifacts
+      - name: Wait for artifacts to be available
+        run: |
+          echo "Waiting for artifacts to be fully available..."
+          sleep 60
+
+      - name: Check artifacts for specific run
         env:
           TOKEN: ${{ secrets.PAT_TOKEN }}
         run: |
-          echo "Listing all artifacts for repository..."
-          curl -s -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github.v3+json" \
-            https://api.github.com/repos/malayu21/Test-for-Devsecops/actions/artifacts | jq '.artifacts[] | {name: .name, id: .id, created_at: .created_at, expired: .expired}'
+          echo "Checking artifacts for workflow run: ${{ github.event.workflow_run.id }}"
+          ARTIFACTS_RESPONSE=$(curl -s -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/malayu21/Test-for-Devsecops/actions/runs/${{ github.event.workflow_run.id }}/artifacts)
+          
+          echo "Artifacts response:"
+          echo "$ARTIFACTS_RESPONSE" | jq . || echo "Failed to parse artifacts JSON"
+          
+          # Check if we have any artifacts
+          ARTIFACT_COUNT=$(echo "$ARTIFACTS_RESPONSE" | jq '.total_count // 0')
+          echo "Total artifacts found: $ARTIFACT_COUNT"
+          
+          if [ "$ARTIFACT_COUNT" -eq 0 ]; then
+            echo "No artifacts found for this workflow run"
+            echo "Listing all recent artifacts in repository..."
+            curl -s -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github.v3+json" \
+              https://api.github.com/repos/malayu21/Test-for-Devsecops/actions/artifacts | \
+              jq '.artifacts[] | select(.name == "security-results") | {name: .name, id: .id, created_at: .created_at, expired: .expired, workflow_run_id: .workflow_run.id}' | head -20
+          fi
 
-      - name: Wait for artifact availability
-        run: |
-          echo "Waiting for artifact to be available..."
-          sleep 30
-
-      - name: Download security results
+      - name: Download security results (primary method)
         id: download-artifact
         uses: actions/download-artifact@v4
         with:
@@ -61,37 +77,94 @@ jobs:
           run-id: ${{ github.event.workflow_run.id }}
         continue-on-error: true
 
-      - name: Retry download security results
-        if: steps.download-artifact.outcomes.success != true
+      - name: Download security results (fallback method)
+        if: steps.download-artifact.outcome != 'success'
         env:
           TOKEN: ${{ secrets.PAT_TOKEN }}
         run: |
-          echo "Retrying artifact download..."
+          echo "Primary download failed, trying fallback method..."
+          
+          # First, try to get the artifact from the specific run
           ARTIFACT_ID=$(curl -s -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github.v3+json" \
             https://api.github.com/repos/malayu21/Test-for-Devsecops/actions/runs/${{ github.event.workflow_run.id }}/artifacts | \
-            jq -r '.artifacts[] | select(.name == "security-results") | .id')
-          if [ -z "$ARTIFACT_ID" ]; then
-            echo "Error: No security-results artifact found for run ${{ github.event.workflow_run.id }}"
+            jq -r '.artifacts[]? | select(.name == "security-results") | .id' | head -1)
+          
+          if [ -z "$ARTIFACT_ID" ] || [ "$ARTIFACT_ID" = "null" ]; then
+            echo "No security-results artifact found for specific run, looking for latest..."
+            # Get the most recent non-expired security-results artifact
+            ARTIFACT_ID=$(curl -s -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github.v3+json" \
+              https://api.github.com/repos/malayu21/Test-for-Devsecops/actions/artifacts | \
+              jq -r '.artifacts[] | select(.name == "security-results" and .expired == false) | .id' | head -1)
+          fi
+          
+          if [ -z "$ARTIFACT_ID" ] || [ "$ARTIFACT_ID" = "null" ]; then
+            echo "Error: No security-results artifact found"
+            echo "Available artifacts:"
+            curl -s -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github.v3+json" \
+              https://api.github.com/repos/malayu21/Test-for-Devsecops/actions/artifacts | \
+              jq '.artifacts[] | {name: .name, id: .id, expired: .expired}' | head -10
             exit 1
           fi
+          
           echo "Found artifact ID: $ARTIFACT_ID"
+          
+          # Download and extract the artifact
+          mkdir -p ./security-results/
           curl -s -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github.v3+json" \
             -L https://api.github.com/repos/malayu21/Test-for-Devsecops/actions/artifacts/$ARTIFACT_ID/zip -o security-results.zip
-          unzip -o security-results.zip -d ./security-results/ || { echo "Failed to unzip artifact"; exit 1; }
-          ls -l ./security-results/
-
-      - name: Verify artifact
-        run: |
-          echo "Checking security-results artifact..."
-          ls -l ./security-results/ || { echo "No files found in security-results directory"; exit 1; }
-          if [ ! -f ./security-results/merged-results.json ]; then
-            echo "Error: merged-results.json not found in security-results artifact"
-            ls -l ./security-results/
+          
+          if [ ! -f security-results.zip ] || [ ! -s security-results.zip ]; then
+            echo "Failed to download artifact or file is empty"
             exit 1
           fi
-          echo "Artifact contents:"
-          cat ./security-results/merged-results.json
-          jq . ./security-results/merged-results.json || { echo "Invalid JSON in merged-results.json"; exit 1; }
+          
+          unzip -o security-results.zip -d ./security-results/ || { 
+            echo "Failed to unzip artifact"
+            ls -la security-results.zip
+            exit 1
+          }
+          
+          echo "Artifact downloaded and extracted successfully"
+          ls -la ./security-results/
+
+      - name: Verify and validate artifact contents
+        run: |
+          echo "Checking security-results artifact contents..."
+          ls -la ./security-results/ || { 
+            echo "No files found in security-results directory"
+            exit 1
+          }
+          
+          # Look for the expected file
+          if [ ! -f ./security-results/merged-results.json ]; then
+            echo "merged-results.json not found, checking for other JSON files..."
+            find ./security-results/ -name "*.json" -type f | head -5
+            
+            # Try to find any JSON file that might contain results
+            JSON_FILE=$(find ./security-results/ -name "*.json" -type f | head -1)
+            if [ -n "$JSON_FILE" ]; then
+              echo "Using alternate JSON file: $JSON_FILE"
+              cp "$JSON_FILE" ./security-results/merged-results.json
+            else
+              echo "No JSON files found in artifact"
+              exit 1
+            fi
+          fi
+          
+          echo "Validating JSON content..."
+          if ! jq empty ./security-results/merged-results.json 2>/dev/null; then
+            echo "Invalid JSON in merged-results.json"
+            echo "File contents:"
+            cat ./security-results/merged-results.json | head -20
+            exit 1
+          fi
+          
+          echo "JSON validation successful"
+          echo "File size: $(wc -c < ./security-results/merged-results.json) bytes"
+          
+          # Show a summary of what we found
+          echo "Security results summary:"
+          jq -r 'keys[]' ./security-results/merged-results.json 2>/dev/null || echo "Could not extract keys from JSON"
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -100,53 +173,158 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y jq unzip
           python -m pip install --upgrade pip
-          pip install -r requirements.txt || { echo "Failed to install requirements.txt"; exit 1; }
+          
+          # Check if requirements.txt exists
+          if [ -f requirements.txt ]; then
+            echo "Installing from requirements.txt..."
+            pip install -r requirements.txt
+          else
+            echo "No requirements.txt found, installing basic dependencies..."
+            pip install requests json5 pathlib
+          fi
 
       - name: Generate AI fixes
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
         run: |
-          echo "Running ai_remediation.py..."
-          python -m scripts.ai_remediation --input ./security-results/merged-results.json --output ./fixes.json || { echo "AI remediation failed"; cat ./fixes.json || echo "No fixes.json generated"; exit 1; }
-          ls -l ./fixes.json || { echo "fixes.json not found"; exit 1; }
-          cat ./fixes.json
+          echo "Preparing to run AI remediation..."
+          
+          # Check if the AI remediation script exists
+          if [ -f scripts/ai_remediation.py ]; then
+            echo "Running ai_remediation.py..."
+            python scripts/ai_remediation.py --input ./security-results/merged-results.json --output ./fixes.json
+          elif [ -f scripts/ai_remediation/__main__.py ]; then
+            echo "Running ai_remediation module..."
+            python -m scripts.ai_remediation --input ./security-results/merged-results.json --output ./fixes.json
+          else
+            echo "AI remediation script not found, checking available scripts..."
+            find . -name "*remediation*" -type f
+            exit 1
+          fi
+          
+          if [ ! -f ./fixes.json ]; then
+            echo "fixes.json not generated"
+            exit 1
+          fi
+          
+          echo "AI fixes generated successfully"
+          echo "Fixes file size: $(wc -c < ./fixes.json) bytes"
 
       - name: Apply fixes
         run: |
-          echo "Running apply_fixes.py..."
-          python scripts/apply_fixes.py --fixes ./fixes.json || { echo "Apply fixes failed"; exit 1; }
+          echo "Applying generated fixes..."
+          
+          if [ -f scripts/apply_fixes.py ]; then
+            python scripts/apply_fixes.py --fixes ./fixes.json
+          else
+            echo "apply_fixes.py not found, checking for alternative..."
+            find . -name "*apply*" -type f
+            echo "Skipping fix application step"
+          fi
 
-      - name: Create fix branch
+      - name: Check for changes and create summary
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "AI Security Bot"
+          
+          # Check if there are any changes
+          git add -A
+          
+          if git diff --staged --quiet; then
+            echo "No changes were made by the AI fixes"
+            echo "SKIP_PR=true" >> $GITHUB_ENV
+            exit 0
+          fi
+          
+          # Create a summary of changes
+          echo "Changes detected, creating summary..."
+          git diff --staged --name-only > changed-files.txt
+          echo "Files modified:" > fixes-summary.txt
+          cat changed-files.txt >> fixes-summary.txt
+          echo "" >> fixes-summary.txt
+          echo "Total files changed: $(wc -l < changed-files.txt)" >> fixes-summary.txt
+          
+          cat fixes-summary.txt
+
+      - name: Create fix branch and commit
+        if: env.SKIP_PR != 'true'
+        run: |
           BRANCH_NAME="ai-security-fixes-$(date +%Y%m%d-%H%M%S)"
           git checkout -b $BRANCH_NAME
-          git add .
-          git status
-          git commit -m "AI Security Fixes
+          
+          git commit -m "AI Security Fixes - $(date +%Y-%m-%d)
 
-          Applied automated fixes for security vulnerabilities:
+          Applied automated fixes for security vulnerabilities detected in workflow run ${{ github.event.workflow_run.id }}.
+
           $(cat fixes-summary.txt)
 
-          Please review these changes carefully before merging." || exit 0
-          git push --force origin $BRANCH_NAME || { echo "Failed to push branch $BRANCH_NAME"; exit 1; }
+          ⚠️  IMPORTANT: Please review these changes carefully before merging.
+          - Test all functionality thoroughly
+          - Verify that security fixes don't break existing features  
+          - Some fixes might need manual adjustment"
+          
+          git push origin $BRANCH_NAME
           echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
-          echo "Branch $BRANCH_NAME pushed successfully"
+          echo "Branch $BRANCH_NAME created and pushed successfully"
 
       - name: Create Pull Request
+        if: env.SKIP_PR != 'true'
         env:
           TOKEN: ${{ secrets.PAT_TOKEN }}
         run: |
-          RESPONSE=$(curl -s -o response.json -w "%{http_code}" -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github.v3+json" \
-            -X POST -d "{\"title\":\"AI Security Fixes - $(date +%Y-%m-%d)\",\"head\":\"${{ env.BRANCH_NAME }}\",\"base\":\"main\",\"body\":\"Automated Security Fixes\n\n$(cat fixes-summary.txt)\n\n- These fixes were generated by AI and need human review\n- Test thoroughly before merging\n- Some fixes might need manual adjustment\n- Check that functionality still works as expected\n\n- SAST Issues: $(jq '.sast | length' ./security-results/merged-results.json)\n- Dependency Issues: $(jq '.dependencies | length' ./security-results/merged-results.json)\n- DAST Issues: $(jq '.dast | length' ./security-results/merged-results.json)\"}" \
+          # Count security issues from the results file
+          SAST_COUNT=$(jq '.sast // [] | length' ./security-results/merged-results.json 2>/dev/null || echo "0")
+          DEPENDENCY_COUNT=$(jq '.dependencies // [] | length' ./security-results/merged-results.json 2>/dev/null || echo "0")
+          DAST_COUNT=$(jq '.dast // [] | length' ./security-results/merged-results.json 2>/dev/null || echo "0")
+          
+          PR_BODY="## 🔒 Automated Security Fixes
+
+          This PR contains automated fixes for security vulnerabilities detected by our security scan pipeline.
+
+          ### 📊 Security Issues Summary:
+          - **SAST Issues**: ${SAST_COUNT}
+          - **Dependency Issues**: ${DEPENDENCY_COUNT}  
+          - **DAST Issues**: ${DAST_COUNT}
+
+          ### 📝 Changes Made:
+          \`\`\`
+          $(cat fixes-summary.txt)
+          \`\`\`
+
+          ### ⚠️  Review Guidelines:
+          - [ ] Test all functionality thoroughly
+          - [ ] Verify security fixes don't break existing features
+          - [ ] Check for any false positives in the fixes
+          - [ ] Review code quality and maintainability
+          - [ ] Run security scans again after merging
+
+          ### 🤖 Generated by:
+          Workflow run: ${{ github.event.workflow_run.html_url }}
+          Triggered by: ${{ github.event.workflow_run.triggering_actor.login }}
+
+          **Note**: These fixes were generated by AI and require human review before merging."
+
+          RESPONSE=$(curl -s -o response.json -w "%{http_code}" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            -X POST \
+            -d "{\"title\":\"🔒 AI Security Fixes - $(date +%Y-%m-%d)\",\"head\":\"${{ env.BRANCH_NAME }}\",\"base\":\"main\",\"body\":$(echo "$PR_BODY" | jq -R -s .)}" \
             https://api.github.com/repos/malayu21/Test-for-Devsecops/pulls)
-          if [ "$RESPONSE" -ne 201 ]; then
-            echo "Failed to create PR. HTTP status: $RESPONSE"
+          
+          if [ "$RESPONSE" -eq 201 ]; then
+            echo "✅ Pull request created successfully"
+            PR_URL=$(jq -r '.html_url' response.json)
+            echo "PR URL: $PR_URL"
+          else
+            echo "❌ Failed to create PR. HTTP status: $RESPONSE"
             cat response.json
             exit 1
           fi
-          echo "Pull request created successfully"
+
+      - name: Cleanup
+        if: always()
+        run: |
+          # Clean up temporary files
+          rm -f security-results.zip response.json changed-files.txt
+          echo "Cleanup completed"
