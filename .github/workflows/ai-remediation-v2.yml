@@ -1,18 +1,15 @@
 name: AI Security Remediation
-
 on:
   workflow_run:
     workflows: ["Security Scan Pipeline"]
     types:
       - completed
-
 permissions:
   contents: write
   actions: write
   security-events: write
   pull-requests: write
   issues: write
-
 jobs:
   ai-fix-generation:
     runs-on: ubuntu-latest
@@ -21,7 +18,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.PAT_TOKEN }}
-
       - name: Debug permissions and API
         env:
           TOKEN: ${{ secrets.PAT_TOKEN }}
@@ -32,13 +28,6 @@ jobs:
           echo "Checking rate limit..."
           curl -s -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github.v3+json" \
             https://api.github.com/rate_limit | jq .
-          echo "Checking available artifacts for run ${{ github.event.workflow_run.id }}..."
-          curl -s -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github.v3+json" \
-            https://api.github.com/repos/malayu21/Test-for-Devsecops/actions/runs/${{ github.event.workflow_run.id }}/artifacts | jq .
-          echo "Workflow run details..."
-          curl -s -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github.v3+json" \
-            https://api.github.com/repos/malayu21/Test-for-Devsecops/actions/runs/${{ github.event.workflow_run.id }} | jq .
-
       - name: List all artifacts
         env:
           TOKEN: ${{ secrets.PAT_TOKEN }}
@@ -46,12 +35,26 @@ jobs:
           echo "Listing all artifacts for repository..."
           curl -s -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github.v3+json" \
             https://api.github.com/repos/malayu21/Test-for-Devsecops/actions/artifacts | jq '.artifacts[] | {name: .name, id: .id, created_at: .created_at, expired: .expired}'
-
       - name: Wait for artifact availability
+        env:
+          TOKEN: ${{ secrets.PAT_TOKEN }}
         run: |
-          echo "Waiting for artifact to be available..."
-          sleep 30
-
+          echo "Polling for security-results artifact..."
+          for i in {1..5}; do
+            ARTIFACT_ID=$(curl -s -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github.v3+json" \
+              https://api.github.com/repos/malayu21/Test-for-Devsecops/actions/runs/${{ github.event.workflow_run.id }}/artifacts | \
+              jq -r '.artifacts[] | select(.name == "security-results") | .id')
+            if [ -n "$ARTIFACT_ID" ]; then
+              echo "Found security-results artifact ID: $ARTIFACT_ID"
+              break
+            fi
+            echo "Artifact not found, retrying in 10 seconds ($i/5)..."
+            sleep 10
+          done
+          if [ -z "$ARTIFACT_ID" ]; then
+            echo "Error: security-results artifact not found after polling"
+            exit 1
+          fi
       - name: Download security results
         id: download-artifact
         uses: actions/download-artifact@v4
@@ -60,9 +63,8 @@ jobs:
           path: ./security-results/
           run-id: ${{ github.event.workflow_run.id }}
         continue-on-error: true
-
       - name: Fallback to latest successful run
-        if: steps.download-artifact.outcomes.success != true
+        if: steps.download-artifact.outcome != 'success'
         env:
           TOKEN: ${{ secrets.PAT_TOKEN }}
         run: |
@@ -82,12 +84,11 @@ jobs:
             echo "Error: No security-results artifact found in run $RUN_ID"
             exit 1
           fi
-          echo "Found artifact ID: $ARTIFACT_ID"
+          echo "Downloading artifact ID: $ARTIFACT_ID"
           curl -s -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github.v3+json" \
             -L https://api.github.com/repos/malayu21/Test-for-Devsecops/actions/artifacts/$ARTIFACT_ID/zip -o security-results.zip
           unzip -o security-results.zip -d ./security-results/ || { echo "Failed to unzip artifact"; exit 1; }
           ls -l ./security-results/
-
       - name: Verify artifact
         run: |
           echo "Checking security-results artifact..."
@@ -97,22 +98,20 @@ jobs:
             ls -l ./security-results/
             exit 1
           fi
+          echo "Validating JSON in merged-results.json..."
+          jq . ./security-results/merged-results.json || { echo "Invalid JSON in merged-results.json"; exit 1; }
           echo "Artifact contents:"
           cat ./security-results/merged-results.json
-          jq . ./security-results/merged-results.json || { echo "Invalid JSON in merged-results.json"; exit 1; }
-
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
       - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y jq unzip
           python -m pip install --upgrade pip
           pip install -r requirements.txt || { echo "Failed to install requirements.txt"; exit 1; }
-
       - name: Generate AI fixes
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
@@ -121,12 +120,10 @@ jobs:
           python -m scripts.ai_remediation --input ./security-results/merged-results.json --output ./fixes.json || { echo "AI remediation failed"; cat ./fixes.json || echo "No fixes.json generated"; exit 1; }
           ls -l ./fixes.json || { echo "fixes.json not found"; exit 1; }
           cat ./fixes.json
-
       - name: Apply fixes
         run: |
           echo "Running apply_fixes.py..."
           python scripts/apply_fixes.py --fixes ./fixes.json || { echo "Apply fixes failed"; exit 1; }
-
       - name: Create fix branch
         run: |
           git config --local user.email "action@github.com"
@@ -135,16 +132,17 @@ jobs:
           git checkout -b $BRANCH_NAME
           git add .
           git status
+          SUMMARY_FILE="./fixes-summary.txt"
+          if [ ! -f "$SUMMARY_FILE" ]; then
+            echo "No fixes applied" > $SUMMARY_FILE
+          fi
           git commit -m "AI Security Fixes
-
           Applied automated fixes for security vulnerabilities:
-          $(cat fixes-summary.txt)
-
+          $(cat $SUMMARY_FILE)
           Please review these changes carefully before merging." || exit 0
           git push --force origin $BRANCH_NAME || { echo "Failed to push branch $BRANCH_NAME"; exit 1; }
           echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
           echo "Branch $BRANCH_NAME pushed successfully"
-
       - name: Create Pull Request
         env:
           TOKEN: ${{ secrets.PAT_TOKEN }}
@@ -158,82 +156,3 @@ jobs:
             exit 1
           fi
           echo "Pull request created successfully"
-```
-
-**Changes**:
-- **Added `List all artifacts` Step**: Uses the GitHub API to list all artifacts in the repository, helping diagnose naming or expiration issues.
-- **Replaced `Retry download security results` with `Fallback to latest successful run`**:
-  - Queries the latest successful `Security Scan Pipeline` run using the workflow file name (`security-scan.yml`).
-  - Retrieves the `security-results` artifact from that run if the original run ID fails.
-- **Enhanced `Verify artifact`**: Added `jq` validation to ensure `merged-results.json` is valid JSON.
-- **Kept DeepSeek Integration**: Retained `DEEPSEEK_API_KEY` for compatibility with the DeepSeek-based `ai_remediation.py`.
-- **Improved Debugging**: Lists artifact contents and checks for `merged-results.json` explicitly.
-
-### Verify `security-scan.yml`
-The `security-results` artifact is generated by the `Security Scan Pipeline`. Ensure `security-scan.yml` uploads the artifact correctly. Below is a reference `security-scan.yml` to confirm the upload step.
-
-<xaiArtifact artifact_id="8a9dae99-b8d8-46d4-88bc-cfba3f11c254" artifact_version_id="46741803-e28a-4a15-a176-d0e6c6c7f5db" title="security-scan.yml" contentType="text/yaml">
-```yaml
-name: Security Scan Pipeline
-
-on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
-
-jobs:
-  security-scan:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y jq
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Run ZAP Scan
-        env:
-          NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
-        run: |
-          # Example: Run ZAP scan (adjust based on your setup)
-          docker run --network host -v $(pwd):/zap/wrk owasp/zap2docker-stable zap-baseline.py \
-            -t https://75f09d80f429.ngrok-free.app -r report_json.json -J report_json.json
-
-      - name: Run Safety Scan
-        env:
-          SAFETY_API_KEY: ${{ secrets.SAFETY_API_KEY }}
-        run: |
-          safety check --json > safety-results.json || true
-
-      - name: Run CodeQL Scan
-        uses: github/codeql-action/analyze@v3
-        with:
-          category: "security"
-          output: sarif-results
-          language: python
-
-      - name: Parse scan results
-        run: |
-          python scripts/parse_sarif.py \
-            --zap-report report_json.json \
-            --safety-report safety-results.json \
-            --codeql-report sarif-results/python.sarif \
-            --output security-results/merged-results.json
-          cat security-results/merged-results.json
-
-      - name: Upload security results
-        uses: actions/upload-artifact@v4
-        with:
-          name: security-results
-          path: security-results/
-          retention-days: 7
